@@ -1,0 +1,46 @@
+{
+  "name": "umojabackend",
+  "version": "1.0.0",
+  "description": "An app that sends money",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "nodemon babel_hook.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "development": "NODE_ENV=development nodemon babel_hook.cjs",
+    "production": "NODE_ENV=production node babel_hook.cjs",
+    "seed:roles": "cross-env NODE_ENV=development node seed/seedRoles.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "umojaBackend"
+  },
+  "keywords": [
+    "umoja"
+  ],
+  "author": "Thobile Sema",
+  "license": "ISC",
+  "dependencies": {
+    "@babel/runtime": "^7.28.4",
+    "axios": "^1.13.2",
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "http": "^0.0.1-security",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.19.3",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.10",
+    "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/node": "^7.28.0",
+    "@babel/plugin-transform-runtime": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "cross-env": "^7.0.3",
+    "nodemon": "^3.1.11"
+  }
+}
