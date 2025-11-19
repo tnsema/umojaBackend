@@ -302,3 +302,31 @@ export async function loginService({ identifier, password }) {
     user: safeUser,
   };
 }
+
+export async function getUserByNumberService({ phone }) {
+  if (!phone) {
+    const err = new Error("Phone number is required");
+    err.code = "PHONE_REQUIRED";
+    throw err;
+  }
+
+  const user = await User.findOne({ phone: phone }).populate("roles");
+
+  if (!user) {
+    const err = new Error("User not found");
+    err.code = "USER_NOT_FOUND";
+    throw err;
+  }
+
+  return {
+    user: {
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      email: user.email,
+      roles: (user.roles || []).map((r) => r.name),
+      status: user.status,
+    },
+  };
+}

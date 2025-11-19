@@ -46,6 +46,9 @@ router.get("/health", (_req, res) => res.json({ ok: true }));
 // Auth
 router.post("/login", upload.none(), userCtrl.login);
 
+// Get user by phone (for external services)
+router.post("/users/phone", upload.none(), jwtVerify, userCtrl.getUserByPhone);
+
 // Registration
 router.post("/client/register", upload.none(), userCtrl.registerClient);
 

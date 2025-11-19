@@ -8,11 +8,22 @@ const notificationSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Optional if scope is ALL_USERS or ROLE
     receiver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function () {
+        return this.scope === "USER";
+      },
     },
+
+    // Optional if scope is ROLE
+    roleIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Role",
+      },
+    ],
 
     method: {
       type: String,
@@ -20,10 +31,19 @@ const notificationSchema = new mongoose.Schema(
       required: true,
     },
 
-    type: {
+    // Category of notification
+    category: {
       type: String,
       enum: ["SYSTEM", "TRANSACTION", "SECURITY", "ACCOUNT", "REMINDER"],
       required: true,
+    },
+
+    // Who should receive it
+    scope: {
+      type: String,
+      enum: ["USER", "ALL_USERS", "ROLE"],
+      required: true,
+      default: "USER",
     },
 
     title: {
