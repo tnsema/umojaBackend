@@ -42,6 +42,7 @@ import {
   listWalletTransactions,
   getWalletTransaction,
 } from "../controllers/walletTransaction.controller.js";
+import * as addressCtrl from "../controllers/address.controller.js";
 
 const router = express.Router();
 
@@ -274,7 +275,11 @@ router.get(
 // User submits KYC
 router.post(
   "/kyc/submit",
-  upload.none(), // or upload.fields([...]) if you use file uploads
+  upload.fields([
+    { name: "front", maxCount: 1 },
+    { name: "back", maxCount: 1 },
+    { name: "selfie", maxCount: 1 },
+  ]),
   jwtVerify,
   kycCtrl.submitKYC
 );
@@ -630,5 +635,34 @@ router.get(
   requireRole("ADMIN", "MEMBER", "CLIENT"),
   getWalletTransaction
 );
+
+// =====================
+// Address CRUD (per user)
+// =====================
+
+// Create address for logged-in user
+router.post(
+  "/addresses",
+  upload.none(),
+  jwtVerify,
+  addressCtrl.createMyAddress
+);
+
+// List addresses for logged-in user
+router.get("/addresses", jwtVerify, addressCtrl.listMyAddresses);
+
+// Get a single address (must belong to logged-in user)
+router.get("/addresses/:id", jwtVerify, addressCtrl.getMyAddress);
+
+// Update address
+router.patch(
+  "/addresses/:id",
+  upload.none(),
+  jwtVerify,
+  addressCtrl.updateMyAddress
+);
+
+// Delete address
+router.delete("/addresses/:id", jwtVerify, addressCtrl.deleteMyAddress);
 
 export default router;
