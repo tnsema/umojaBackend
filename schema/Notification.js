@@ -2,22 +2,23 @@ import mongoose from "mongoose";
 
 const notificationSchema = new mongoose.Schema(
   {
+    // SYSTEM or user sender — optional
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
 
-    // Optional if scope is ALL_USERS or ROLE
+    // Receiver — optional (system-wide or role-based)
     receiver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: function () {
-        return this.scope === "USER";
-      },
+      required: false,
+      default: null,
     },
 
-    // Optional if scope is ROLE
+    // Optional: broadcast to roles
     roleIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -25,27 +26,30 @@ const notificationSchema = new mongoose.Schema(
       },
     ],
 
+    // Method of delivery
     method: {
       type: String,
       enum: ["IN_APP", "EMAIL", "SMS", "PUSH_NOTIFICATION"],
       required: true,
     },
 
-    // Category of notification
-    category: {
+    // Notification type/category
+    type: {
       type: String,
       enum: ["SYSTEM", "TRANSACTION", "SECURITY", "ACCOUNT", "REMINDER"],
-      required: true,
+      required: false,
+      default: "SYSTEM",
     },
 
-    // Who should receive it
+    // Who receives it
     scope: {
       type: String,
       enum: ["USER", "ALL_USERS", "ROLE"],
-      required: true,
+      required: false,
       default: "USER",
     },
 
+    // Title + message body
     title: {
       type: String,
       required: true,
@@ -58,11 +62,13 @@ const notificationSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Link to details
     linkToData: {
       type: String,
       default: null,
     },
 
+    // Mark as read
     read: {
       type: Boolean,
       default: false,

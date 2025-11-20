@@ -42,10 +42,6 @@ const transferSchema = new Schema(
 
     // Recipient physical address (for agents / records).
     // Optional: may be captured for extra verification or payout documentation.
-    recipientAddress: {
-      type: String,
-      trim: true,
-    },
 
     // Amount to be received by the recipient (in smallest unit, e.g. cents)
     amount: {
@@ -74,7 +70,7 @@ const transferSchema = new Schema(
     status: {
       type: String,
       enum: ["PENDING", "COMPLETED", "CANCELLED"],
-      default: "PENDING_VERIFICATION",
+      default: "PENDING",
     },
 
     // Storage key / URL to proof of payment (for deposits),

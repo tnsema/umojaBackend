@@ -1,35 +1,54 @@
-// schema/WalletTransaction.js
-// Immutable log of every wallet movement with strict ENUM types.
-
+// models/walletTransaction.js
 import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
-const WALLET_TRANSACTION_TYPES = [
-  "DEPOSIT", // Credit from real bank deposit
-  "WITHDRAWAL", // Debit to real bank withdrawal
+/*
+|--------------------------------------------------------------------------
+| ENUMS
+|--------------------------------------------------------------------------
+*/
 
-  "TRANSFER_OUT", // Sender sending money
-  "TRANSFER_IN", // Receiver receiving money
+export const WalletTransactionTypes = {
+  DEPOSIT: "DEPOSIT", // Real-money top up
+  WITHDRAWAL: "WITHDRAWAL", // Real bank withdrawal
 
-  "CASH_PAYOUT", // Agent gave cash to recipient (reverse of TRANSFER_IN)
+  TRANSFER_OUT: "TRANSFER_OUT", // P1 sends money
+  TRANSFER_IN: "TRANSFER_IN", // P2 receives money
+  CASH_PAYOUT: "CASH_PAYOUT", // When agent gives cash to user
 
-  "LOAN_DISBURSEMENT", // Loan principal credited to borrower
-  "LOAN_REPAYMENT", // Borrower repaid installment
+  LOAN_DISBURSEMENT: "LOAN_DISBURSEMENT", // Umoja sends loan
+  LOAN_REPAYMENT: "LOAN_REPAYMENT", // Borrower repays loan
 
-  "CONTRIBUTION", // Monthly contribution
-  "CAPITAL", // Annual capital payment
+  CONTRIBUTION: "CONTRIBUTION", // Monthly contribution
+  CAPITAL: "CAPITAL", // Annual capital payment
 
-  "PROJECT_CONTRIB", // Project investment
-  "PROJECT_COMMISSION", // Commission taken by Umoja
+  PROJECT_CONTRIB: "PROJECT_CONTRIB", // Project investment
+  PROJECT_COMMISSION: "PROJECT_COMMISSION",
 
-  "REFUND", // Refund back to member
-  "ADJUSTMENT", // Admin manual correction
-];
+  REFUND: "REFUND",
+  ADJUSTMENT: "ADJUSTMENT",
+};
+
+export const WalletTransactionDirection = {
+  DEBIT: "DEBIT",
+  CREDIT: "CREDIT",
+};
+
+export const WalletTransactionStatus = {
+  PENDING: "PENDING",
+  CONFIRMED: "CONFIRMED",
+  REJECTED: "REJECTED",
+};
+
+/*
+|--------------------------------------------------------------------------
+| SCHEMA
+|--------------------------------------------------------------------------
+*/
 
 const walletTransactionSchema = new Schema(
   {
-    // Wallet this transaction belongs to
     walletId: {
       type: Schema.Types.ObjectId,
       ref: "Wallet",
@@ -37,52 +56,80 @@ const walletTransactionSchema = new Schema(
       index: true,
     },
 
-    // Strict ENUM of wallet transaction types
-    type: {
+    // DEBIT = money leaving wallet
+    // CREDIT = money entering wallet
+    direction: {
       type: String,
-      enum: WALLET_TRANSACTION_TYPES,
+      enum: Object.values(WalletTransactionDirection),
       required: true,
     },
 
-    // Transaction amount (in smallest unit, e.g., cents)
+    type: {
+      type: String,
+      enum: Object.values(WalletTransactionTypes),
+      required: true,
+    },
+
     amount: {
+      type: Number,
+      required: true,
+      min: 0.01,
+    },
+
+    // Ledger tracking
+    balanceBefore: {
+      type: Number,
+      required: true,
+    },
+    balanceAfter: {
       type: Number,
       required: true,
     },
 
-    // Human-readable or external reference (e.g. bank ref, system ref)
+    // Link to higher-level business entity
+    relatedType: {
+      type: String,
+      enum: [
+        "DEPOSIT",
+        "TRANSFER",
+        "LOAN",
+        "CONTRIBUTION",
+        "PROJECT",
+        "PAYOUT",
+        "REFUND",
+        "ADJUSTMENT",
+        "OTHER",
+      ],
+      default: "OTHER",
+    },
+
+    relatedId: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
+
     reference: {
       type: String,
       trim: true,
+      default: null,
     },
 
-    // Transaction status
     status: {
       type: String,
-      enum: ["PENDING", "CONFIRMED", "REJECTED"],
-      default: "PENDING",
+      enum: Object.values(WalletTransactionStatus),
+      default: WalletTransactionStatus.CONFIRMED,
     },
 
-    // Storage key / URL to POP (bank slip, screenshot, etc.)
-    proofOfPaymentDocId: {
-      type: String,
-    },
-
-    // User who initiated this transaction
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
+      default: null,
     },
 
-    // Admin who verified the action
-    verifiedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-    },
-
-    // Date of verification
-    verifiedAt: {
-      type: Date,
+    // flexible metadata object
+    meta: {
+      type: Object,
+      default: {},
     },
   },
   {
@@ -90,4 +137,20 @@ const walletTransactionSchema = new Schema(
   }
 );
 
-export default model("WalletTransaction", walletTransactionSchema);
+/*
+|--------------------------------------------------------------------------
+| INDEXES
+|--------------------------------------------------------------------------
+*/
+
+walletTransactionSchema.index({ walletId: 1, createdAt: -1 });
+walletTransactionSchema.index({ relatedType: 1, relatedId: 1 });
+
+/*
+|--------------------------------------------------------------------------
+| MODEL
+|--------------------------------------------------------------------------
+*/
+
+const WalletTransaction = model("WalletTransaction", walletTransactionSchema);
+export default WalletTransaction;

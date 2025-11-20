@@ -5,7 +5,6 @@ import {
   getWalletByUserService,
   depositToWalletService,
   withdrawFromWalletService,
-  transferBetweenWalletsService,
 } from "../services/wallet.service.js";
 
 /**
@@ -121,8 +120,6 @@ export async function depositToWallet(req, res) {
     const result = await depositToWalletService({
       walletId,
       amount,
-      reference,
-      createdBy: adminId,
     });
 
     return res.status(200).json({
@@ -179,8 +176,6 @@ export async function withdrawFromWallet(req, res) {
     const result = await withdrawFromWalletService({
       walletId,
       amount,
-      reference,
-      createdBy: adminId,
     });
 
     return res.status(200).json({
@@ -224,95 +219,6 @@ export async function withdrawFromWallet(req, res) {
     return res.status(500).json({
       status: false,
       message: "Server error during withdrawal",
-    });
-  }
-}
-
-/**
- * POST /wallets/transfer
- * Body (form-data):
- *  - fromWalletId
- *  - toWalletId
- *  - amount
- *  - reference (optional)
- *
- * Auth: jwtVerify + requireRole("ADMIN") (for now)
- */
-export async function transferBetweenWallets(req, res) {
-  try {
-    const adminId = req.payload?.userId;
-    const { fromWalletId, toWalletId, amount, reference } = req.body || {};
-
-    const result = await transferBetweenWalletsService({
-      fromWalletId,
-      toWalletId,
-      amount,
-      reference,
-      createdBy: adminId,
-    });
-
-    return res.status(200).json({
-      status: true,
-      message: "Transfer completed successfully",
-      data: result,
-    });
-  } catch (err) {
-    console.error("Error in transferBetweenWallets:", err);
-
-    if (err.code === "WALLET_ID_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "Both fromWalletId and toWalletId are required",
-      });
-    }
-
-    if (err.code === "SAME_WALLET") {
-      return res.status(400).json({
-        status: false,
-        message: "Cannot transfer to the same wallet",
-      });
-    }
-
-    if (err.code === "INVALID_AMOUNT") {
-      return res.status(400).json({
-        status: false,
-        field: "amount",
-        message: "Invalid transfer amount",
-      });
-    }
-
-    if (err.code === "FROM_WALLET_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Source wallet not found",
-      });
-    }
-
-    if (err.code === "TO_WALLET_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Destination wallet not found",
-      });
-    }
-
-    if (err.code === "CURRENCY_MISMATCH") {
-      return res.status(400).json({
-        status: false,
-        message: "Cannot transfer between different currencies",
-      });
-    }
-
-    if (err.code === "INSUFFICIENT_FUNDS") {
-      return res.status(400).json({
-        status: false,
-        field: "amount",
-        message: "Insufficient funds in source wallet",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error during wallet transfer",
     });
   }
 }

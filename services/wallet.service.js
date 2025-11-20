@@ -7,11 +7,7 @@
 
 import Models from "../model/model.js";
 
-const {
-  wallet: Wallet,
-  walletTransaction: WalletTransaction,
-  user: User,
-} = Models;
+const { wallet: Wallet, user: User } = Models;
 
 /**
  * createWalletForUser(userId, currency)
@@ -104,7 +100,7 @@ export async function depositToWalletService({
   // Update balance
   wallet.balance += depositAmount;
   await wallet.save();
-
+  /*
   const tx = await WalletTransaction.create({
     walletId: wallet._id,
     type: "DEPOSIT", // must be in your enum
@@ -116,8 +112,8 @@ export async function depositToWalletService({
     verifiedBy: createdBy || null,
     verifiedAt: new Date(),
   });
-
-  return { wallet, transaction: tx };
+*/
+  return { wallet };
 }
 
 /**
@@ -125,12 +121,7 @@ export async function depositToWalletService({
  *
  * Debits the wallet and creates a WITHDRAWAL transaction.
  */
-export async function withdrawFromWalletService({
-  walletId,
-  amount,
-  reference,
-  createdBy,
-}) {
+export async function withdrawFromWalletService({ walletId, amount }) {
   if (!walletId) {
     const err = new Error("walletId is required");
     err.code = "WALLET_ID_REQUIRED";
@@ -161,117 +152,5 @@ export async function withdrawFromWalletService({
   wallet.balance -= withdrawalAmount;
   await wallet.save();
 
-  const tx = await WalletTransaction.create({
-    walletId: wallet._id,
-    type: "WITHDRAWAL",
-    amount: withdrawalAmount,
-    reference: reference || null,
-    status: "CONFIRMED",
-    createdBy: createdBy || null,
-    verifiedBy: createdBy || null,
-    verifiedAt: new Date(),
-  });
-
-  return { wallet, transaction: tx };
-}
-
-/**
- * transferBetweenWallets({ fromWalletId, toWalletId, amount, reference, createdBy })
- *
- * Internal transfer:
- *  - debit fromWallet
- *  - credit toWallet
- *  - create TRANSFER_OUT + TRANSFER_IN transactions
- */
-export async function transferBetweenWalletsService({
-  fromWalletId,
-  toWalletId,
-  amount,
-  reference,
-  createdBy,
-}) {
-  if (!fromWalletId || !toWalletId) {
-    const err = new Error("Both fromWalletId and toWalletId are required");
-    err.code = "WALLET_ID_REQUIRED";
-    throw err;
-  }
-
-  if (fromWalletId === toWalletId) {
-    const err = new Error("Cannot transfer to the same wallet");
-    err.code = "SAME_WALLET";
-    throw err;
-  }
-
-  if (!amount || isNaN(amount) || Number(amount) <= 0) {
-    const err = new Error("Invalid transfer amount");
-    err.code = "INVALID_AMOUNT";
-    throw err;
-  }
-
-  const txAmount = Number(amount);
-
-  const fromWallet = await Wallet.findById(fromWalletId);
-  if (!fromWallet) {
-    const err = new Error("Source wallet not found");
-    err.code = "FROM_WALLET_NOT_FOUND";
-    throw err;
-  }
-
-  const toWallet = await Wallet.findById(toWalletId);
-  if (!toWallet) {
-    const err = new Error("Destination wallet not found");
-    err.code = "TO_WALLET_NOT_FOUND";
-    throw err;
-  }
-
-  if (fromWallet.currency !== toWallet.currency) {
-    const err = new Error("Cannot transfer between different currencies");
-    err.code = "CURRENCY_MISMATCH";
-    throw err;
-  }
-
-  if (fromWallet.balance < txAmount) {
-    const err = new Error("Insufficient funds in source wallet");
-    err.code = "INSUFFICIENT_FUNDS";
-    throw err;
-  }
-
-  // Debit source
-  fromWallet.balance -= txAmount;
-  await fromWallet.save();
-
-  const outTx = await WalletTransaction.create({
-    walletId: fromWallet._id,
-    type: "TRANSFER_OUT",
-    amount: txAmount,
-    reference: reference || null,
-    status: "CONFIRMED",
-    createdBy: createdBy || null,
-    verifiedBy: createdBy || null,
-    verifiedAt: new Date(),
-  });
-
-  // Credit destination
-  toWallet.balance += txAmount;
-  await toWallet.save();
-
-  const inTx = await WalletTransaction.create({
-    walletId: toWallet._id,
-    type: "TRANSFER_IN",
-    amount: txAmount,
-    reference: reference || null,
-    status: "CONFIRMED",
-    createdBy: createdBy || null,
-    verifiedBy: createdBy || null,
-    verifiedAt: new Date(),
-  });
-
-  return {
-    fromWallet,
-    toWallet,
-    transactions: {
-      outTx,
-      inTx,
-    },
-  };
+  return { wallet };
 }

@@ -1,17 +1,7 @@
-// services/notification.service.js
-// Business logic for notifications:
-// - create (with method-specific helpers)
-// - get by id
-// - list per user
-// - list all (admin)
-// - mark read
-// - delete
-
 import Models from "../model/model.js";
 
 const { notification: Notification, user: User } = Models;
 
-// Allowed methods/types matching your schema
 const ALLOWED_METHODS = ["IN_APP", "EMAIL", "SMS", "PUSH_NOTIFICATION"];
 const ALLOWED_TYPES = [
   "SYSTEM",
@@ -21,131 +11,74 @@ const ALLOWED_TYPES = [
   "REMINDER",
 ];
 
-/**
- * INTERNAL HELPERS
- * ----------------
- * Each method has its own creator. They all:
- *  - validate receiver exists
- *  - ensure sender exists (if provided)
- *  - create Notification document
- *
- * Later you can extend EMAIL/SMS/PUSH to actually send via providers.
- */
-
-async function createInAppNotification({
-  senderId,
-  receiverId,
-  type,
-  title,
-  message,
-  linkToData,
-}) {
-  const notification = await Notification.create({
-    sender: senderId,
-    receiver: receiverId,
+async function createInAppNotification(payload) {
+  return Notification.create({
+    sender: payload.senderId || null,
+    receiver: payload.receiverId || null,
     method: "IN_APP",
-    type,
-    title,
-    description: message,
-    linkToData: linkToData || null,
+    type: payload.type,
+    title: payload.title,
+    description: payload.message,
+    linkToData: payload.linkToData || null,
   });
-
-  return notification;
 }
 
-async function createEmailNotification({
-  senderId,
-  receiverId,
-  type,
-  title,
-  message,
-  linkToData,
-}) {
-  const notification = await Notification.create({
-    sender: senderId,
-    receiver: receiverId,
+async function createEmailNotification(payload) {
+  return Notification.create({
+    sender: payload.senderId || null,
+    receiver: payload.receiverId || null,
     method: "EMAIL",
-    type,
-    title,
-    description: message,
-    linkToData: linkToData || null,
+    type: payload.type,
+    title: payload.title,
+    description: payload.message,
+    linkToData: payload.linkToData || null,
   });
-
-  // TODO: integrate with real email provider here
-  // e.g., sendEmail(receiver.email, title, message, linkToData)
-
-  return notification;
 }
 
-async function createSmsNotification({
-  senderId,
-  receiverId,
-  type,
-  title,
-  message,
-  linkToData,
-}) {
-  const notification = await Notification.create({
-    sender: senderId,
-    receiver: receiverId,
+async function createSmsNotification(payload) {
+  return Notification.create({
+    sender: payload.senderId || null,
+    receiver: payload.receiverId || null,
     method: "SMS",
-    type,
-    title,
-    description: message,
-    linkToData: linkToData || null,
+    type: payload.type,
+    title: payload.title,
+    description: payload.message,
+    linkToData: payload.linkToData || null,
   });
-
-  // TODO: integrate with SMS gateway
-
-  return notification;
 }
 
-async function createPushNotification({
-  senderId,
-  receiverId,
-  type,
-  title,
-  message,
-  linkToData,
-}) {
-  const notification = await Notification.create({
-    sender: senderId,
-    receiver: receiverId,
+async function createPushNotification(payload) {
+  return Notification.create({
+    sender: payload.senderId || null,
+    receiver: payload.receiverId || null,
     method: "PUSH_NOTIFICATION",
-    type,
-    title,
-    description: message,
-    linkToData: linkToData || null,
+    type: payload.type,
+    title: payload.title,
+    description: payload.message,
+    linkToData: payload.linkToData || null,
   });
-
-  // TODO: integrate with push service (Firebase, etc.)
-
-  return notification;
 }
 
 /**
- * createNotification({ userId, type, method, title, message, senderId?, linkToData? })
- *
- * NOTE: userId = receiverId.
- * senderId is optional; if not provided, we default sender = receiver (or you can later set a SYSTEM user).
+ * CREATE Notification (receiver can be null)
  */
 export async function createNotificationService({
-  userId,
+  userId = null, // receiverId
   type,
   method,
   title,
   message,
-  linkToData,
-  senderId,
+  linkToData = null,
+  senderId = null,
 }) {
-  if (!userId || !type || !method || !title || !message) {
+  if (!type || !method || !title || !message) {
     const err = new Error("Missing required fields");
     err.code = "FIELDS_REQUIRED";
     throw err;
   }
 
-  const normalizedMethod = String(method).trim().toUpperCase();
-  const normalizedType = String(type).trim().toUpperCase();
+  const normalizedMethod = method.trim().toUpperCase();
+  const normalizedType = type.trim().toUpperCase();
 
   if (!ALLOWED_METHODS.includes(normalizedMethod)) {
     const err = new Error("Invalid notification method");
@@ -159,15 +92,22 @@ export async function createNotificationService({
     throw err;
   }
 
-  // Receiver
-  const receiverUser = await User.findById(userId);
-  if (!receiverUser) {
-    const err = new Error("Receiver not found");
-    err.code = "RECEIVER_NOT_FOUND";
-    throw err;
+  // -------------------------------
+  // Optional receiver
+  // -------------------------------
+  let receiverUser = null;
+  if (userId) {
+    receiverUser = await User.findById(userId);
+    if (!receiverUser) {
+      const err = new Error("Receiver not found");
+      err.code = "RECEIVER_NOT_FOUND";
+      throw err;
+    }
   }
 
-  // Optional sender: if not provided, we default to same user (you can later change to SYSTEM user)
+  // -------------------------------
+  // Optional sender
+  // -------------------------------
   let senderUser = null;
   if (senderId) {
     senderUser = await User.findById(senderId);
@@ -178,11 +118,9 @@ export async function createNotificationService({
     }
   }
 
-  const effectiveSenderId = senderUser ? senderUser._id : receiverUser._id;
-
   const payload = {
-    senderId: effectiveSenderId,
-    receiverId: receiverUser._id,
+    senderId: senderUser?._id || null, // OK to be null
+    receiverId: receiverUser?._id || null, // OK to be null
     type: normalizedType,
     title: title.trim(),
     message: message.trim(),
@@ -198,11 +136,6 @@ export async function createNotificationService({
       return createSmsNotification(payload);
     case "PUSH_NOTIFICATION":
       return createPushNotification(payload);
-    default: {
-      const err = new Error("Unsupported notification method");
-      err.code = "INVALID_METHOD";
-      throw err;
-    }
   }
 }
 

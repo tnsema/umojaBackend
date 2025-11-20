@@ -1,6 +1,7 @@
 // routes/front.routes.js
 import express from "express";
 import multer from "multer";
+import { upload } from "../config/multer.js";
 import { jwtVerify, jwtSign, requireRole } from "../helper/jwtVerify.js";
 import * as userCtrl from "../controllers/user.controller.js";
 import {
@@ -17,6 +18,7 @@ import * as loanCtrl from "../controllers/loan.controller.js";
 import * as meetingCtrl from "../controllers/meeting.controller.js";
 import * as meetingAttCtrl from "../controllers/meetingAttendance.controller.js";
 import * as payoutCtrl from "../controllers/payout.controller.js";
+import * as depositCtrl from "../controllers/deposit.controller.js";
 import {
   createProject,
   assignProjectManager,
@@ -35,10 +37,15 @@ import {
   listUserTransfers,
   getTransferByRef,
 } from "../controllers/transfer.controller.js";
+import {
+  createWalletTransaction,
+  listWalletTransactions,
+  getWalletTransaction,
+} from "../controllers/walletTransaction.controller.js";
 
 const router = express.Router();
 
-const upload = multer({ dest: "uploads/" });
+//const upload = multer({ dest: "uploads/" });
 
 // Health check
 router.get("/health", (_req, res) => res.json({ ok: true }));
@@ -118,7 +125,7 @@ router.post(
   "/wallets",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN"),
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
   walletCtrl.createWalletForUser
 );
 
@@ -130,7 +137,7 @@ router.post(
   "/wallets/:walletId/deposit",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN"),
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
   walletCtrl.depositToWallet
 );
 
@@ -139,17 +146,8 @@ router.post(
   "/wallets/:walletId/withdraw",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN"),
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
   walletCtrl.withdrawFromWallet
-);
-
-// Admin: transfer between wallets
-router.post(
-  "/wallets/transfer",
-  upload.none(),
-  jwtVerify,
-  requireRole("ADMIN"),
-  walletCtrl.transferBetweenWallets
 );
 
 // Create notification (admin/system)
@@ -570,6 +568,67 @@ router.get(
   "/transfers/ref/:systemRef",
   jwtVerify, // or optional
   getTransferByRef
+);
+
+// -------------------- Deposits --------------------
+
+// Create a deposit (CLIENT / MEMBER uploads PoP)
+router.post(
+  "/deposits",
+  upload.single("pop"), // or upload.none() if popUrl only from body
+  jwtVerify,
+  requireRole("CLIENT", "MEMBER", "ADMIN"),
+  depositCtrl.createDeposit
+);
+
+// Admin verifies deposit
+router.post(
+  "/deposits/:depositId/verify",
+  upload.none(),
+  jwtVerify,
+  requireRole("ADMIN"),
+  depositCtrl.verifyDeposit
+);
+
+// Admin updates status generically
+router.patch(
+  "/deposits/:depositId/status",
+  upload.none(),
+  jwtVerify,
+  requireRole("ADMIN"),
+  depositCtrl.updateDepositStatus
+);
+
+// Admin deletes deposit
+router.delete(
+  "/deposits/:depositId",
+  upload.none(),
+  jwtVerify,
+  requireRole("ADMIN"),
+  depositCtrl.deleteDeposit
+);
+
+// Wallet Transactions
+router.post(
+  "/wallet-transactions",
+  upload.none(),
+  jwtVerify,
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
+  createWalletTransaction
+);
+
+router.get(
+  "/wallet-transactions/:walletId",
+  jwtVerify,
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
+  listWalletTransactions
+);
+
+router.get(
+  "/wallet-transaction/:id",
+  jwtVerify,
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
+  getWalletTransaction
 );
 
 export default router;
