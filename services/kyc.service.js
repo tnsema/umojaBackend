@@ -3,6 +3,7 @@
 
 import Models from "../model/model.js";
 import mongoose from "mongoose";
+import { upsertAddressForUserService } from "../services/address.service.js"; // ⬅️ new
 
 const { kyc: Kyc, user: User } = Models;
 const { isValidObjectId } = mongoose;
@@ -10,25 +11,34 @@ const { isValidObjectId } = mongoose;
 const ALLOWED_DOC_TYPES = ["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"];
 
 /**
- * submitKYC({ userId, fields, docIds })
+ * submitKYCService
  *
- * fields: {
- *   country,
- *   idNo,
- *   documentType
- * }
- *
- * docIds: {
- *   front,
- *   back?,
- *   selfie
+ * payload:
+ * {
+ *   userId,
+ *   fields: { idNo, documentType },
+ *   docIds: { front, back, selfie },
+ *   address: {
+ *     line1,
+ *     line2,
+ *     city,
+ *     state,
+ *     postalCode,
+ *     country
+ *   }
  * }
  */
-export async function submitKYCService({ userId, fields = {}, docIds = {} }) {
-  const { country, idNo, documentType } = fields;
+export async function submitKYCService({
+  userId,
+  fields = {},
+  docIds = {},
+  address = {},
+}) {
+  const { idNo, documentType } = fields;
   const { front, back, selfie } = docIds;
 
-  if (!userId || !country || !idNo || !documentType || !front || !selfie) {
+  // Required KYC fields (note: no "country" here)
+  if (!userId || !idNo || !documentType || !front || !selfie) {
     const err = new Error("Missing required KYC fields");
     err.code = "FIELDS_REQUIRED";
     throw err;
@@ -54,10 +64,9 @@ export async function submitKYCService({ userId, fields = {}, docIds = {} }) {
     throw err;
   }
 
-  // Optionally: you can mark older KYC records as superseded; for now we just create a new one.
+  // 1) Create KYC record
   const kyc = await Kyc.create({
     userId,
-    country: String(country).trim(),
     idNo: String(idNo).trim(),
     documentType: docTypeUpper,
     front,
@@ -67,17 +76,26 @@ export async function submitKYCService({ userId, fields = {}, docIds = {} }) {
     reason: "",
   });
 
-  return kyc;
+  // 2) Upsert address using address service (if any address fields provided)
+  let savedAddress = null;
+  const hasAddressData =
+    address &&
+    Object.values(address).some(
+      (v) => v !== undefined && v !== null && v !== ""
+    );
+
+  if (hasAddressData) {
+    savedAddress = await upsertAddressForUserService(userId, address);
+  }
+
+  return { kyc, address: savedAddress };
 }
 
 /**
- * approveKYC({ adminId, kycId })
- *
- * - Ensures admin exists
- * - Ensures KYC exists
- * - Sets status to APPROVED and clears reason
- * - Optionally updates user.status to ACTIVE
+ * approveKYCService, rejectKYCService, getKYCByUserService
+ * (unchanged from previous fixed version)
  */
+
 export async function approveKYCService({ adminId, kycId }) {
   if (!adminId || !kycId) {
     const err = new Error("adminId and kycId are required");
@@ -85,15 +103,9 @@ export async function approveKYCService({ adminId, kycId }) {
     throw err;
   }
 
-  if (!isValidObjectId(adminId)) {
-    const err = new Error("Invalid adminId");
-    err.code = "INVALID_ADMIN_ID";
-    throw err;
-  }
-
-  if (!isValidObjectId(kycId)) {
-    const err = new Error("Invalid kycId");
-    err.code = "INVALID_KYC_ID";
+  if (!isValidObjectId(adminId) || !isValidObjectId(kycId)) {
+    const err = new Error("Invalid ID");
+    err.code = "INVALID_ID";
     throw err;
   }
 
@@ -121,7 +133,6 @@ export async function approveKYCService({ adminId, kycId }) {
   kyc.reason = "";
   await kyc.save();
 
-  // Optionally update user status
   const user = await User.findById(kyc.userId);
   if (user && user.status === "PENDING_KYC") {
     user.status = "ACTIVE";
@@ -131,11 +142,6 @@ export async function approveKYCService({ adminId, kycId }) {
   return { kyc, user };
 }
 
-/**
- * rejectKYC({ adminId, kycId, reason })
- *
- * - Sets status to REJECTED and stores reason.
- */
 export async function rejectKYCService({ adminId, kycId, reason }) {
   if (!adminId || !kycId || !reason) {
     const err = new Error("adminId, kycId and reason are required");
@@ -143,15 +149,9 @@ export async function rejectKYCService({ adminId, kycId, reason }) {
     throw err;
   }
 
-  if (!isValidObjectId(adminId)) {
-    const err = new Error("Invalid adminId");
-    err.code = "INVALID_ADMIN_ID";
-    throw err;
-  }
-
-  if (!isValidObjectId(kycId)) {
-    const err = new Error("Invalid kycId");
-    err.code = "INVALID_KYC_ID";
+  if (!isValidObjectId(adminId) || !isValidObjectId(kycId)) {
+    const err = new Error("Invalid ID");
+    err.code = "INVALID_ID";
     throw err;
   }
 
@@ -173,21 +173,10 @@ export async function rejectKYCService({ adminId, kycId, reason }) {
   kyc.reason = String(reason).trim();
   await kyc.save();
 
-  // Optionally update user.status back to PENDING_KYC or something else.
-  const user = await User.findById(kyc.userId);
-  if (user && user.status === "ACTIVE") {
-    // depending on your logic you may or may not change it;
-    // for now we leave user.status as-is.
-  }
-
+  const user = await User.findById(kyc.userId); // optional, kept for symmetry
   return { kyc, user };
 }
 
-/**
- * getKYCByUser(userId)
- *
- * Returns the latest KYC submission for a user (most recent createdAt).
- */
 export async function getKYCByUserService(userId) {
   if (!userId) {
     const err = new Error("userId is required");

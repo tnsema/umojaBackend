@@ -9,41 +9,85 @@ import {
 
 /**
  * POST /kyc/submit
+ * User submits their own KYC.
  *
- * Form-data:
- *  - country
+ * Body (form-data or JSON):
  *  - idNo
- *  - documentType ("NATIONAL_ID" | "PASSPORT" | "DRIVERS_LICENSE")
- *  - front       (string file key / path)
- *  - back?       (string file key / path)
- *  - selfie      (string file key / path)
+ *  - documentType  (NATIONAL_ID | PASSPORT | DRIVERS_LICENSE)
  *
- * Auth: jwtVerify (user submits their own KYC)
+ * Files (optional if you wire multer):
+ *  - front
+ *  - back
+ *  - selfie
  */
 export async function submitKYC(req, res) {
   try {
-    const userId = req.payload?.userId || req.body.userId; // prefer logged-in user
-    const { country, idNo, documentType, front, back, selfie } = req.body || {};
+    const userId = req.payload?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
 
-    const kyc = await submitKYCService({
+    // ====== KYC FIELDS FROM BODY ======
+    const { idNo, documentType } = req.body || {};
+
+    // ====== ADDRESS FIELDS FROM BODY ======
+    const {
+      streetNumber,
+      streetName,
+      suburb,
+      city,
+      province,
+      postalCode,
+      country,
+    } = req.body || {};
+
+    // ====== FILES (IF USING MULTER.FIELDS) ======
+    const files = req.files || {};
+    const frontFile = files.front?.[0];
+    const backFile = files.back?.[0];
+    const selfieFile = files.selfie?.[0];
+
+    const docIds = {
+      front: frontFile ? frontFile.path || frontFile.filename : req.body?.front,
+      back: backFile ? backFile.path || backFile.filename : req.body?.back,
+      selfie: selfieFile
+        ? selfieFile.path || selfieFile.filename
+        : req.body?.selfie,
+    };
+
+    // ====== ADDRESS OBJECT FOR ADDRESS SERVICE / KYC SERVICE ======
+    const address = {
+      streetNumber: streetNumber || "",
+      streetName: streetName || "",
+      suburb: suburb || "",
+      city: city || "",
+      province: province || "",
+      postalCode: postalCode || "",
+      country: country || "South Africa",
+    };
+
+    const result = await submitKYCService({
       userId,
-      fields: { country, idNo, documentType },
-      docIds: { front, back, selfie },
+      fields: { idNo, documentType },
+      docIds,
+      address,
     });
 
     return res.status(201).json({
       status: true,
       message: "KYC submitted successfully",
-      data: kyc,
+      data: result,
     });
   } catch (err) {
-    console.error("Error in submitKYC:", err);
+    console.error("submitKYC error:", err);
 
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message:
-          "userId, country, idNo, documentType, front and selfie are required",
+        message: "Missing required KYC fields",
       });
     }
 
@@ -77,13 +121,19 @@ export async function submitKYC(req, res) {
 
 /**
  * POST /kyc/:kycId/approve
- *
- * Auth: jwtVerify + requireRole("ADMIN")
+ * Admin approves KYC.
  */
 export async function approveKYC(req, res) {
   try {
     const adminId = req.payload?.userId;
     const { kycId } = req.params;
+
+    if (!adminId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
 
     const result = await approveKYCService({ adminId, kycId });
 
@@ -93,7 +143,7 @@ export async function approveKYC(req, res) {
       data: result,
     });
   } catch (err) {
-    console.error("Error in approveKYC:", err);
+    console.error("approveKYC error:", err);
 
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
@@ -102,24 +152,17 @@ export async function approveKYC(req, res) {
       });
     }
 
-    if (err.code === "INVALID_ADMIN_ID") {
+    if (err.code === "INVALID_ID" || err.code === "INVALID_KYC_ID") {
       return res.status(400).json({
         status: false,
-        message: "Invalid adminId",
-      });
-    }
-
-    if (err.code === "INVALID_KYC_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid kycId",
+        message: "Invalid ID provided",
       });
     }
 
     if (err.code === "ADMIN_NOT_FOUND") {
       return res.status(404).json({
         status: false,
-        message: "Admin user not found",
+        message: "Admin not found",
       });
     }
 
@@ -146,17 +189,23 @@ export async function approveKYC(req, res) {
 
 /**
  * POST /kyc/:kycId/reject
+ * Admin rejects KYC with a reason.
  *
- * Form-data:
- *  - reason
- *
- * Auth: jwtVerify + requireRole("ADMIN")
+ * Body:
+ *  - reason (string)
  */
 export async function rejectKYC(req, res) {
   try {
     const adminId = req.payload?.userId;
     const { kycId } = req.params;
     const { reason } = req.body || {};
+
+    if (!adminId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
 
     const result = await rejectKYCService({ adminId, kycId, reason });
 
@@ -166,7 +215,7 @@ export async function rejectKYC(req, res) {
       data: result,
     });
   } catch (err) {
-    console.error("Error in rejectKYC:", err);
+    console.error("rejectKYC error:", err);
 
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
@@ -175,24 +224,17 @@ export async function rejectKYC(req, res) {
       });
     }
 
-    if (err.code === "INVALID_ADMIN_ID") {
+    if (err.code === "INVALID_ID" || err.code === "INVALID_KYC_ID") {
       return res.status(400).json({
         status: false,
-        message: "Invalid adminId",
-      });
-    }
-
-    if (err.code === "INVALID_KYC_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid kycId",
+        message: "Invalid ID provided",
       });
     }
 
     if (err.code === "ADMIN_NOT_FOUND") {
       return res.status(404).json({
         status: false,
-        message: "Admin user not found",
+        message: "Admin not found",
       });
     }
 
@@ -212,12 +254,17 @@ export async function rejectKYC(req, res) {
 
 /**
  * GET /kyc/me
- * Auth: jwtVerify
- * Returns current user's latest KYC
+ * Logged-in user: get their latest KYC.
  */
 export async function getMyKYC(req, res) {
   try {
     const userId = req.payload?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
 
     const kyc = await getKYCByUserService(userId);
 
@@ -226,14 +273,7 @@ export async function getMyKYC(req, res) {
       data: kyc,
     });
   } catch (err) {
-    console.error("Error in getMyKYC:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "userId is required",
-      });
-    }
+    console.error("getMyKYC error:", err);
 
     if (err.code === "INVALID_USER_ID") {
       return res.status(400).json({
@@ -245,7 +285,7 @@ export async function getMyKYC(req, res) {
     if (err.code === "KYC_NOT_FOUND") {
       return res.status(404).json({
         status: false,
-        message: "No KYC submission found for user",
+        message: "No KYC submission found",
       });
     }
 
@@ -258,8 +298,7 @@ export async function getMyKYC(req, res) {
 
 /**
  * GET /kyc/user/:userId
- * Auth: jwtVerify + requireRole("ADMIN")
- * Admin fetches a user's latest KYC
+ * Admin: get latest KYC for specific user.
  */
 export async function getKYCByUser(req, res) {
   try {
@@ -272,14 +311,7 @@ export async function getKYCByUser(req, res) {
       data: kyc,
     });
   } catch (err) {
-    console.error("Error in getKYCByUser:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "userId is required",
-      });
-    }
+    console.error("getKYCByUser error:", err);
 
     if (err.code === "INVALID_USER_ID") {
       return res.status(400).json({
@@ -291,13 +323,13 @@ export async function getKYCByUser(req, res) {
     if (err.code === "KYC_NOT_FOUND") {
       return res.status(404).json({
         status: false,
-        message: "No KYC submission found for user",
+        message: "No KYC submission found for this user",
       });
     }
 
     return res.status(500).json({
       status: false,
-      message: "Server error while fetching KYC",
+      message: "Server error while fetching KYC by user",
     });
   }
 }

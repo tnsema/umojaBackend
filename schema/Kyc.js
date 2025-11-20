@@ -1,6 +1,4 @@
 // models/KYCSubmission.js
-// Stores documents and status for each KYC submission.
-
 import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
@@ -10,12 +8,6 @@ const kycSchema = new Schema(
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
-    },
-
-    country: {
-      type: String,
-      trim: true,
       required: true,
     },
 
@@ -38,6 +30,7 @@ const kycSchema = new Schema(
 
     back: {
       type: String,
+      default: null,
     },
 
     selfie: {
@@ -54,6 +47,7 @@ const kycSchema = new Schema(
     reason: {
       type: String,
       trim: true,
+      default: "",
     },
   },
   {
