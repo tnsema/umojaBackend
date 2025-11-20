@@ -5,18 +5,6 @@ import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
-const addressSchema = new Schema(
-  {
-    line1: { type: String, trim: true },
-    line2: { type: String, trim: true },
-    city: { type: String, trim: true },
-    state: { type: String, trim: true },
-    postalCode: { type: String, trim: true },
-    country: { type: String, trim: true, default: "South Africa" },
-  },
-  { _id: false }
-);
-
 const userSchema = new Schema(
   {
     phone: {
@@ -71,8 +59,6 @@ const userSchema = new Schema(
       enum: ["MALE", "FEMALE", "RATHER_NOT_TO_SAY"],
       default: "RATHER_NOT_TO_SAY",
     },
-
-    address: addressSchema,
   },
   {
     timestamps: true,

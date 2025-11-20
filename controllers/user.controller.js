@@ -7,6 +7,7 @@ import {
   deleteUserService,
   requestUserUpgradeService,
   loginService,
+  getUserByNumberService,
 } from "../services/user.service.js";
 
 /**
@@ -305,6 +306,41 @@ export async function requestUserUpgrade(req, res) {
     return res.status(500).json({
       status: false,
       message: "Server error while requesting upgrade",
+    });
+  }
+}
+
+export async function getUserByPhone(req, res) {
+  try {
+    const { phone } = req.body || {};
+
+    const result = await getUserByNumberService({ phone });
+
+    return res.status(200).json({
+      status: true,
+      message: "User fetched successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("Error in login:", err);
+
+    if (err.code === "PHONE_REQUIRED") {
+      return res.status(400).json({
+        status: false,
+        message: "Phone number is required",
+      });
+    }
+
+    if (err.code === "USER_NOT_FOUND") {
+      return res.status(404).json({
+        status: false,
+        message: err.message,
+      });
+    }
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error during fetching user by phone",
     });
   }
 }

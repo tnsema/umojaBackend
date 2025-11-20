@@ -22,6 +22,8 @@ import systemSetting from "../schema/SystemSetting.js";
 import auditLog from "../schema/AuditLog.js";
 import mainAccount from "../schema/MainAccout.js";
 import notification from "../schema/Notification.js";
+import address from "../schema/Address.js";
+import deposit from "../schema/Deposit.js";
 
 const Models = {
   user, // base user accounts (multi-role via Role collection)
@@ -51,6 +53,8 @@ const Models = {
   auditLog, // audit trail for important actions
   mainAccount, // main bank account details
   notification, // user notifications
+  address, // addresses linked to users
+  deposit, // bank deposits linked to wallets
 };
 
 export default Models;

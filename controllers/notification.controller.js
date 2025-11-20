@@ -50,7 +50,7 @@ export async function createNotification(req, res) {
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message: "userId, type, method, title and message are required",
+        message: "type, method, title and message are required",
       });
     }
 

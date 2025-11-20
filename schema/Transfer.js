@@ -17,8 +17,6 @@ const transferSchema = new Schema(
     },
 
     // Recipient user in the system (client or member).
-    // If the person was not in the system, we first create a User for them,
-    // usually with status = PENDING_KYC and no password yet.
     recipientId: {
       type: Schema.Types.ObjectId,
       ref: "User",
@@ -44,10 +42,6 @@ const transferSchema = new Schema(
 
     // Recipient physical address (for agents / records).
     // Optional: may be captured for extra verification or payout documentation.
-    recipientAddress: {
-      type: String,
-      trim: true,
-    },
 
     // Amount to be received by the recipient (in smallest unit, e.g. cents)
     amount: {
@@ -69,19 +63,14 @@ const transferSchema = new Schema(
       default: "WALLET",
     },
 
-    // PENDING_VERIFICATION: awaiting proof / admin check
+    // PENDING: awaiting proof / admin check
     // READY_FOR_PAYOUT: cleared and waiting at paying agent
     // PAID_OUT: recipient has received the funds
     // CANCELLED: transfer cancelled or failed
     status: {
       type: String,
-      enum: [
-        "PENDING_VERIFICATION",
-        "READY_FOR_PAYOUT",
-        "PAID_OUT",
-        "CANCELLED",
-      ],
-      default: "PENDING_VERIFICATION",
+      enum: ["PENDING", "COMPLETED", "CANCELLED"],
+      default: "PENDING",
     },
 
     // Storage key / URL to proof of payment (for deposits),
@@ -92,12 +81,6 @@ const transferSchema = new Schema(
 
     // Admin who verified this transfer (moved it to READY_FOR_PAYOUT)
     verifiedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-    },
-
-    // Paying Agent (User with PAYING_AGENT role) assigned to this transfer
-    payingAgentId: {
       type: Schema.Types.ObjectId,
       ref: "User",
     },
