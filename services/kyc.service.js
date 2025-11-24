@@ -3,7 +3,7 @@
 
 import Models from "../model/model.js";
 import mongoose from "mongoose";
-import { upsertAddressForUserService } from "../services/address.service.js"; // ⬅️ new
+import { upsertAddressForUserService } from "./address.service.js"; // same folder
 
 const { kyc: Kyc, user: User } = Models;
 const { isValidObjectId } = mongoose;
@@ -16,13 +16,21 @@ const ALLOWED_DOC_TYPES = ["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"];
  * payload:
  * {
  *   userId,
- *   fields: { idNo, documentType },
- *   docIds: { front, back, selfie },
+ *   fields: {
+ *     idNo,
+ *     documentType,
+ *   },
+ *   docIds: {
+ *     front,
+ *     back,
+ *     selfie,
+ *   },
  *   address: {
- *     line1,
- *     line2,
+ *     streetNumber,
+ *     streetName,
+ *     suburb,
  *     city,
- *     state,
+ *     province,
  *     postalCode,
  *     country
  *   }
@@ -37,7 +45,7 @@ export async function submitKYCService({
   const { idNo, documentType } = fields;
   const { front, back, selfie } = docIds;
 
-  // Required KYC fields (note: no "country" here)
+  // Required KYC fields (no "country" here anymore)
   if (!userId || !idNo || !documentType || !front || !selfie) {
     const err = new Error("Missing required KYC fields");
     err.code = "FIELDS_REQUIRED";
@@ -92,10 +100,8 @@ export async function submitKYCService({
 }
 
 /**
- * approveKYCService, rejectKYCService, getKYCByUserService
- * (unchanged from previous fixed version)
+ * approveKYCService
  */
-
 export async function approveKYCService({ adminId, kycId }) {
   if (!adminId || !kycId) {
     const err = new Error("adminId and kycId are required");
@@ -142,6 +148,9 @@ export async function approveKYCService({ adminId, kycId }) {
   return { kyc, user };
 }
 
+/**
+ * rejectKYCService
+ */
 export async function rejectKYCService({ adminId, kycId, reason }) {
   if (!adminId || !kycId || !reason) {
     const err = new Error("adminId, kycId and reason are required");
@@ -173,10 +182,14 @@ export async function rejectKYCService({ adminId, kycId, reason }) {
   kyc.reason = String(reason).trim();
   await kyc.save();
 
-  const user = await User.findById(kyc.userId); // optional, kept for symmetry
+  const user = await User.findById(kyc.userId); // optional
   return { kyc, user };
 }
 
+/**
+ * getKYCByUserService
+ * Returns latest KYC for a user.
+ */
 export async function getKYCByUserService(userId) {
   if (!userId) {
     const err = new Error("userId is required");
@@ -199,4 +212,13 @@ export async function getKYCByUserService(userId) {
   }
 
   return kyc;
+}
+
+/**
+ * getAllKYCService
+ * Admin: list all KYC submissions (newest first).
+ */
+export async function getAllKYCService() {
+  const kycs = await Kyc.find().sort({ createdAt: -1 }).lean();
+  return kycs;
 }

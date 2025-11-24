@@ -8,6 +8,7 @@ import {
   requestUserUpgradeService,
   loginService,
   getUserByNumberService,
+  listAllUsersService,
 } from "../services/user.service.js";
 
 /**
@@ -341,6 +342,24 @@ export async function getUserByPhone(req, res) {
     return res.status(500).json({
       status: false,
       message: "Server error during fetching user by phone",
+    });
+  }
+}
+
+export async function listAllUsers(req, res) {
+  try {
+    const users = await listAllUsersService();
+
+    return res.status(200).json({
+      status: true,
+      message: "Users fetched successfully",
+      data: users,
+    });
+  } catch (err) {
+    console.error("LIST USERS ERROR:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error fetching users",
     });
   }
 }

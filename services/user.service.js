@@ -256,3 +256,11 @@ export async function getUserByNumberService({ phone }) {
     },
   };
 }
+
+export async function listAllUsersService() {
+  const users = await User.find()
+    .select("_id firstName lastName phone email roles status")
+    .lean();
+
+  return users;
+}

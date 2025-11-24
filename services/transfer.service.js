@@ -1,97 +1,73 @@
 // services/transfer.service.js
-// Handles creation & verification of money transfers in Umoja.
+// Business logic for money transfers in Umoja.
 
 import Models from "../model/model.js";
 import mongoose from "mongoose";
 
-const {
-  user: User,
-  role: Role,
-  wallet: Wallet,
-  walletTransaction: WalletTransaction,
-  transfer: Transfer,
-} = Models;
-
+const { transfer: Transfer, user: User } = Models;
 const { isValidObjectId } = mongoose;
 
-// Helper: find or create recipient user (shadow CLIENT if needed)
-async function ensureRecipientUser({ phone, firstName, lastName }) {
-  let user = await User.findOne({ phone });
-
-  if (user) return user;
-
-  // Create shadow client (no password, PENDING_KYC)
-  const clientRole = await Role.findOne({ name: "CLIENT" });
-  if (!clientRole) {
-    const err = new Error("CLIENT role not found");
-    err.code = "ROLE_NOT_FOUND";
-    throw err;
-  }
-
-  user = await User.create({
-    phone,
-    firstName: firstName || "",
-    lastName: lastName || "",
-    email: null,
-    passwordHash: null,
-    roles: [clientRole._id],
-    status: "PENDING_KYC",
-  });
-
-  // Create wallet for new user
-  await Wallet.create({
-    userId: user._id,
-    balance: 0,
-    currency: "CDF", // or whichever default you choose
-  });
-
-  return user;
+// Helper: generate unique reference
+function generateTransferReference() {
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `TRF-${Date.now()}-${randomPart}`;
 }
 
+// Helper: normalize status
+function normalizeStatus(status) {
+  return String(status || "")
+    .trim()
+    .toUpperCase();
+}
+
+const ALLOWED_STATUSES = [
+  "CREATED", // initial status
+  "SUBMITTED", // after submission of proof of payment
+  "DECLINED", // when admin declines the transfer
+  "APPROVED", // when admin approves the transfer
+  "PAID", // when transfer is marked as paid,
+  "FAILED", // when transfer fails
+  "CANCELLED", // when user/admin cancels the transfer
+];
+
 /**
- * createTransferRequest({
+ * createTransferService({
  *   senderId,
- *   recipientPhone,
- *   recipientFirstName?,   // optional
- *   recipientLastName?,    // optional
+ *   receiverPhone,
  *   amount,
- *   bankRef,
- *   proofDocId,
+ *   description?
  * })
  *
- * - Ensures sender exists
- * - Ensures recipient user exists (or creates shadow CLIENT)
- * - Creates Transfer with status PENDING_VERIFICATION
+ * - senderId: from JWT (req.payload.userId)
+ * - receiverPhone: phone used to look up receiver User
+ * - amount: positive number
+ * - status: PENDING by default
  */
-export async function createTransferRequestService({
+export async function createTransferService({
   senderId,
-  recipientPhone,
-  recipientFirstName,
-  recipientLastName,
+  receiverPhone,
   amount,
-  bankRef,
-  proofDocId,
+  description,
 }) {
-  if (!senderId || !recipientPhone || !amount) {
-    const err = new Error("senderId, recipientPhone and amount are required");
+  if (!senderId || !receiverPhone || !amount) {
+    const err = new Error("senderId, receiverPhone and amount are required");
     err.code = "FIELDS_REQUIRED";
     throw err;
   }
 
   if (!isValidObjectId(senderId)) {
     const err = new Error("Invalid senderId");
-    err.code = "INVALID_SENDER_ID";
+    err.code = "INVALID_USER_ID";
     throw err;
   }
 
   const numericAmount = Number(amount);
   if (isNaN(numericAmount) || numericAmount <= 0) {
-    const err = new Error("Invalid amount");
+    const err = new Error("Invalid transfer amount");
     err.code = "INVALID_AMOUNT";
     throw err;
   }
 
-  // Ensure sender exists
   const sender = await User.findById(senderId);
   if (!sender) {
     const err = new Error("Sender not found");
@@ -99,193 +75,164 @@ export async function createTransferRequestService({
     throw err;
   }
 
-  // Ensure recipient user exists (or create shadow)
-  const recipient = await ensureRecipientUser({
-    phone: recipientPhone,
-    firstName: recipientFirstName,
-    lastName: recipientLastName,
-  });
+  const receiver = await User.findOne({ phone: receiverPhone.trim() });
+  if (!receiver) {
+    const err = new Error("Receiver not found with provided phone");
+    err.code = "RECEIVER_NOT_FOUND";
+    throw err;
+  }
 
-  // Generate system reference
-  const systemRef = `TRX-${Date.now()}-${Math.random()
-    .toString(36)
-    .substring(2, 8)
-    .toUpperCase()}`;
+  if (String(sender._id) === String(receiver._id)) {
+    const err = new Error("Sender and receiver cannot be the same user");
+    err.code = "SAME_USER";
+    throw err;
+  }
+
+  // Generate unique reference
+  let reference = generateTransferReference();
+  // simple collision-avoid loop
+  // eslint-disable-next-line no-constant-condition
+  while (await Transfer.findOne({ reference })) {
+    reference = generateTransferReference();
+  }
 
   const transfer = await Transfer.create({
-    senderId: sender._id,
-    recipientId: recipient._id, // make sure Transfer schema has this
-    recipientPhone,
+    reference,
+    sender: sender._id,
+    receiver: receiver._id,
     amount: numericAmount,
-    bankRef: bankRef || "",
-    systemRef,
-    status: "PENDING_VERIFICATION",
-    proofOfPaymentDocId: proofDocId || null,
+    description: description || "",
+    receiverPhoneInput: receiverPhone,
+    status: "CREATED",
+    createdBy: sender._id,
   });
 
   return transfer;
 }
 
 /**
- * verifyTransfer({
- *   transferId,
- *   adminId,
- *   decision,      // "APPROVE" | "REJECT"
- *   adminComment?
- * })
+ * verifyTransferByReferenceService({ reference })
  *
- * APPROVE:
- *  - credit sender wallet (DEPOSIT) for bank deposit
- *  - debit sender wallet (TRANSFER_OUT)
- *  - credit recipient wallet (TRANSFER_IN)
- *  - set Transfer.status = "READY_FOR_PAYOUT"
- *
- * REJECT:
- *  - set Transfer.status = "CANCELLED"
+ * - Finds transfer by reference
+ * - Typically used to confirm that reference + amount match
  */
-export async function verifyTransferService({
-  transferId,
-  adminId,
-  decision,
-  adminComment,
+export async function verifyTransferByReferenceService({ reference }) {
+  if (!reference) {
+    const err = new Error("Reference is required");
+    err.code = "REFERENCE_REQUIRED";
+    throw err;
+  }
+
+  // Find the transfer
+  const transfer = await Transfer.findOne({ reference: reference.trim() })
+    .populate("sender", "firstName lastName phone")
+    .populate("receiver", "firstName lastName phone");
+
+  if (!transfer) {
+    const err = new Error("Transfer not found for given reference");
+    err.code = "TRANSFER_NOT_FOUND";
+    throw err;
+  }
+
+  // Automatically update status to COMPLETED
+  try {
+    await updateTransferStatusByReferenceService({
+      reference: reference.trim(),
+      newStatus: "COMPLETED",
+    });
+
+    // OPTIONAL: you can re-fetch the updated record
+    transfer.status = "COMPLETED";
+  } catch (e) {
+    console.error("Failed to auto-update transfer status to COMPLETED:", e);
+  }
+
+  return transfer;
+}
+
+/**
+ * updateTransferStatusByReferenceService({ reference, newStatus })
+ *
+ * - Updates status of a transfer found by reference
+ */
+export async function updateTransferStatusByReferenceService({
+  reference,
+  newStatus,
 }) {
-  if (!transferId || !adminId || !decision) {
-    const err = new Error("transferId, adminId and decision are required");
+  if (!reference || !newStatus) {
+    const err = new Error("reference and newStatus are required");
     err.code = "FIELDS_REQUIRED";
     throw err;
   }
 
-  if (!isValidObjectId(transferId) || !isValidObjectId(adminId)) {
-    const err = new Error("Invalid transferId or adminId");
-    err.code = "INVALID_ID";
+  const normalizedStatus = normalizeStatus(newStatus);
+  if (!ALLOWED_STATUSES.includes(normalizedStatus)) {
+    const err = new Error("Invalid transfer status");
+    err.code = "INVALID_STATUS";
     throw err;
   }
 
-  const decisionUpper = String(decision).trim().toUpperCase();
-  if (!["APPROVE", "REJECT"].includes(decisionUpper)) {
-    const err = new Error("Invalid decision");
-    err.code = "INVALID_DECISION";
-    throw err;
-  }
+  const transfer = await Transfer.findOneAndUpdate(
+    { reference: reference.trim() },
+    { status: normalizedStatus },
+    { new: true }
+  );
 
-  const transfer = await Transfer.findById(transferId);
   if (!transfer) {
+    const err = new Error("Transfer not found for given reference");
+    err.code = "TRANSFER_NOT_FOUND";
+    throw err;
+  }
+
+  return transfer;
+}
+
+/**
+ * deleteTransferByIdService({ transferId })
+ */
+export async function deleteTransferByIdService({ transferId }) {
+  if (!transferId) {
+    const err = new Error("transferId is required");
+    err.code = "FIELDS_REQUIRED";
+    throw err;
+  }
+
+  if (!isValidObjectId(transferId)) {
+    const err = new Error("Invalid transferId");
+    err.code = "INVALID_TRANSFER_ID";
+    throw err;
+  }
+
+  const deleted = await Transfer.findByIdAndDelete(transferId);
+  if (!deleted) {
     const err = new Error("Transfer not found");
     err.code = "TRANSFER_NOT_FOUND";
     throw err;
   }
 
-  if (transfer.status !== "PENDING_VERIFICATION") {
-    const err = new Error("Transfer is not in a verifiable state");
-    err.code = "NOT_VERIFIABLE";
-    throw err;
-  }
-
-  // Attach comment and verifier
-  transfer.adminComment = adminComment || transfer.adminComment;
-  transfer.verifiedBy = adminId;
-  transfer.verifiedAt = new Date();
-
-  if (decisionUpper === "REJECT") {
-    transfer.status = "CANCELLED";
-    await transfer.save();
-    return { transfer, walletChanges: null, walletTransactions: [] };
-  }
-
-  // APPROVE FLOW
-  // Ensure wallets for sender + recipient
-  let senderWallet = await Wallet.findOne({ userId: transfer.senderId });
-  let recipientWallet = await Wallet.findOne({ userId: transfer.recipientId });
-
-  if (!senderWallet) {
-    senderWallet = await Wallet.create({
-      userId: transfer.senderId,
-      balance: 0,
-      currency: "CDF",
-    });
-  }
-
-  if (!recipientWallet) {
-    recipientWallet = await Wallet.create({
-      userId: transfer.recipientId,
-      balance: 0,
-      currency: "CDF",
-    });
-  }
-
-  const amount = transfer.amount;
-
-  // 1) Credit sender wallet with DEPOSIT (confirmed)
-  senderWallet.balance += amount;
-  await senderWallet.save();
-
-  const depositTx = await WalletTransaction.create({
-    walletId: senderWallet._id,
-    type: "DEPOSIT",
-    amount,
-    reference: `BANK_REF:${transfer.bankRef || transfer.systemRef}`,
-    status: "CONFIRMED",
-    proofOfPaymentDocId: transfer.proofOfPaymentDocId || null,
-    createdBy: transfer.senderId,
-    verifiedBy: adminId,
-    verifiedAt: new Date(),
-  });
-
-  // 2) Internal transfer: sender → recipient
-  // Debit sender
-  senderWallet.balance -= amount;
-  await senderWallet.save();
-
-  const transferOutTx = await WalletTransaction.create({
-    walletId: senderWallet._id,
-    type: "TRANSFER_OUT",
-    amount,
-    reference: `TRX_OUT:${transfer.systemRef}`,
-    status: "CONFIRMED",
-    createdBy: transfer.senderId,
-    verifiedBy: adminId,
-    verifiedAt: new Date(),
-  });
-
-  // Credit recipient
-  recipientWallet.balance += amount;
-  await recipientWallet.save();
-
-  const transferInTx = await WalletTransaction.create({
-    walletId: recipientWallet._id,
-    type: "TRANSFER_IN",
-    amount,
-    reference: `TRX_IN:${transfer.systemRef}`,
-    status: "CONFIRMED",
-    createdBy: transfer.senderId,
-    verifiedBy: adminId,
-    verifiedAt: new Date(),
-  });
-
-  // Update transfer status → ready for cash payout
-  transfer.status = "READY_FOR_PAYOUT";
-  await transfer.save();
-
-  return {
-    transfer,
-    walletChanges: {
-      senderWallet,
-      recipientWallet,
-    },
-    walletTransactions: {
-      depositTx,
-      transferOutTx,
-      transferInTx,
-    },
-  };
+  return deleted;
 }
 
 /**
- * listUserTransfers(userId)
+ * listAllTransfersService()
  *
- * Returns transfers where user is sender or recipient.
+ * - Returns all transfers (for admin)
  */
-export async function listUserTransfersService(userId) {
+export async function listAllTransfersService() {
+  const transfers = await Transfer.find()
+    .populate("sender receiver", "firstName lastName phone")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return transfers;
+}
+
+/**
+ * listTransfersForUserService({ userId })
+ *
+ * - Transfers where user is sender OR receiver
+ */
+export async function listTransfersForUserService({ userId }) {
   if (!userId) {
     const err = new Error("userId is required");
     err.code = "FIELDS_REQUIRED";
@@ -299,8 +246,9 @@ export async function listUserTransfersService(userId) {
   }
 
   const transfers = await Transfer.find({
-    $or: [{ senderId: userId }, { recipientId: userId }],
+    $or: [{ sender: userId }, { receiver: userId }],
   })
+    .populate("sender receiver", "firstName lastName phone")
     .sort({ createdAt: -1 })
     .lean();
 
@@ -308,25 +256,101 @@ export async function listUserTransfersService(userId) {
 }
 
 /**
- * getTransferByRef(systemRef)
+ * listTransfersByStatusService({ status })
+ *
+ * - All transfers with a given status (for admin)
  */
-export async function getTransferByRefService(systemRef) {
-  if (!systemRef) {
-    const err = new Error("systemRef is required");
+export async function listTransfersByStatusService({ status }) {
+  if (!status) {
+    const err = new Error("status is required");
     err.code = "FIELDS_REQUIRED";
     throw err;
   }
 
-  const transfer = await Transfer.findOne({ systemRef })
-    .populate("senderId", "firstName lastName phone email")
-    .populate("recipientId", "firstName lastName phone email")
-    .lean();
+  const normalizedStatus = normalizeStatus(status);
 
-  if (!transfer) {
-    const err = new Error("Transfer not found");
-    err.code = "TRANSFER_NOT_FOUND";
+  if (!ALLOWED_STATUSES.includes(normalizedStatus)) {
+    const err = new Error("Invalid status");
+    err.code = "INVALID_STATUS";
     throw err;
   }
 
-  return transfer;
+  const transfers = await Transfer.find({ status: normalizedStatus })
+    .populate("sender receiver", "firstName lastName phone")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return transfers;
+}
+
+/**
+ * listTransfersForUserByStatusService({ userId, status })
+ *
+ * - Transfers for a given user (sender or receiver) filtered by status
+ */
+export async function listTransfersForUserByStatusService({ userId, status }) {
+  if (!userId || !status) {
+    const err = new Error("userId and status are required");
+    err.code = "FIELDS_REQUIRED";
+    throw err;
+  }
+
+  if (!isValidObjectId(userId)) {
+    const err = new Error("Invalid userId");
+    err.code = "INVALID_USER_ID";
+    throw err;
+  }
+
+  const normalizedStatus = normalizeStatus(status);
+
+  if (!ALLOWED_STATUSES.includes(normalizedStatus)) {
+    const err = new Error("Invalid status");
+    err.code = "INVALID_STATUS";
+    throw err;
+  }
+
+  const transfers = await Transfer.find({
+    status: normalizedStatus,
+    $or: [{ sender: userId }, { receiver: userId }],
+  })
+    .populate("sender receiver", "firstName lastName phone")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return transfers;
+}
+
+export async function calculateInterestService({ roles, amount }) {
+  const amt = Number(amount);
+  if (isNaN(amt) || amt <= 0) {
+    const err = new Error("Invalid amount");
+    err.code = "INVALID_AMOUNT";
+    throw err;
+  }
+
+  // Determine the highest-level role
+  // Priority: ADMIN → MEMBER → CLIENT
+  let role = "CLIENT"; // default fallback
+  if (roles.includes("ADMIN")) role = "ADMIN";
+  else if (roles.includes("MEMBER")) role = "MEMBER";
+  else if (roles.includes("CLIENT")) role = "CLIENT";
+
+  // Default interest rules
+  let rate = 0.02; // CLIENT = 2%
+
+  if (role === "ADMIN") rate = 0; // Admin pays 0%
+  if (role === "MEMBER") rate = 0.15; // Member pays 15%
+  if (role === "CLIENT") rate = 0.25; // Client pays 25%
+
+  const interest = amt * rate;
+  const totalAmount = amt + interest;
+
+  return {
+    roles,
+    effectiveRole: role,
+    amount: amt,
+    interest,
+    totalAmount,
+    rate,
+  };
 }

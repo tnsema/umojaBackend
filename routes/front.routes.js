@@ -1,6 +1,5 @@
 // routes/front.routes.js
 import express from "express";
-import multer from "multer";
 import { upload } from "../config/multer.js";
 import { jwtVerify, jwtSign, requireRole } from "../helper/jwtVerify.js";
 import * as userCtrl from "../controllers/user.controller.js";
@@ -30,12 +29,18 @@ import {
   createProjectContribution,
   listProjectContributions,
 } from "../controllers/projectContribution.controller.js";
+// Transfer controller imports
 import {
-  createTransferRequest,
-  verifyTransfer,
-  listMyTransfers,
-  listUserTransfers,
-  getTransferByRef,
+  createTransfer,
+  verifyTransferByReference,
+  updateTransferStatusByReference,
+  deleteTransferById,
+  listAllTransfers,
+  listTransfersForAuthenticatedUser,
+  listTransfersForUser,
+  listTransfersByStatus,
+  listTransfersForAuthenticatedUserByStatus,
+  calculateInterest,
 } from "../controllers/transfer.controller.js";
 import {
   createWalletTransaction,
@@ -50,6 +55,10 @@ const router = express.Router();
 
 // Health check
 router.get("/health", (_req, res) => res.json({ ok: true }));
+
+// =========================
+// Users
+// =========================
 
 // Auth
 router.post("/login", upload.none(), userCtrl.login);
@@ -93,6 +102,10 @@ router.post(
   userCtrl.requestUserUpgrade
 );
 
+// =========================
+// Members
+// =========================
+
 // Member operations
 // Upgrade client → member
 router.post(
@@ -120,6 +133,10 @@ router.post(
   requireRole("ADMIN"),
   assignMemberAsProjectManager
 );
+
+// =========================
+// Wallets
+// =========================
 
 // Admin: create wallet
 router.post(
@@ -150,6 +167,10 @@ router.post(
   requireRole("ADMIN", "MEMBER", "CLIENT"),
   walletCtrl.withdrawFromWallet
 );
+
+// =========================
+// Notifications
+// =========================
 
 // Create notification (admin/system)
 router.post(
@@ -190,6 +211,10 @@ router.delete(
   notifCtrl.deleteNotification
 );
 
+// =========================
+// Roles
+// =========================
+
 // Create role
 router.post(
   "/roles",
@@ -219,6 +244,10 @@ router.post(
   requireRole("ADMIN"),
   roleCtrl.removeRoleFromUser
 );
+
+// =========================
+// Contributions
+// =========================
 
 // Member: create own contribution
 router.post(
@@ -272,6 +301,10 @@ router.get(
   contribCtrl.getContributionsByYearByMember
 );
 
+// =========================
+// KYC
+// =========================
+
 // User submits KYC
 router.post(
   "/kyc/submit",
@@ -312,6 +345,12 @@ router.get(
   requireRole("ADMIN"),
   kycCtrl.getKYCByUser
 );
+
+router.get("/kyc/all", jwtVerify, requireRole("ADMIN"), kycCtrl.listAllKYC);
+
+// =========================
+// Loans
+// =========================
 
 // Borrower: request loan
 router.post(
@@ -394,6 +433,10 @@ router.get(
 // Admin: all loans
 router.get("/loans", jwtVerify, requireRole("ADMIN"), loanCtrl.listAllLoans);
 
+// =========================
+// Meetings
+// =========================
+
 // Create meeting
 router.post(
   "/meetings",
@@ -473,8 +516,11 @@ router.post(
   payoutCtrl.verifyPayout
 );
 
+// =========================
+// Projects
+// =========================
+
 // Create a new project
-// - typically any MEMBER/CLIENT can request a project
 router.post(
   "/projects",
   upload.none(),
@@ -539,40 +585,85 @@ router.get(
   listProjectContributions
 );
 
-// Sender creates transfer request
+// =========================
+// Transfers
+// =========================
+
+// Create a transfer (logged-in user → sender)
 router.post(
   "/transfers",
   upload.none(),
   jwtVerify,
-  requireRole("CLIENT", "MEMBER"),
-  createTransferRequest
+  requireRole("MEMBER", "CLIENT"),
+  createTransfer
 );
 
-// Admin verifies transfer
-router.post(
-  "/transfers/:transferId/verify",
+// Verify transfer by reference
+router.get(
+  "/transfers/verify/:reference",
+  jwtVerify,
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
+  verifyTransferByReference
+);
+
+// Update transfer status (ADMIN only)
+router.patch(
+  "/transfers/:reference/status",
   upload.none(),
   jwtVerify,
   requireRole("ADMIN"),
-  verifyTransfer
+  updateTransferStatusByReference
 );
 
-// Logged-in user: list their transfers
-router.get("/transfers/me", jwtVerify, listMyTransfers);
+// Delete transfer (ADMIN only)
+router.delete(
+  "/transfers/:transferId",
+  jwtVerify,
+  requireRole("ADMIN"),
+  deleteTransferById
+);
 
-// Admin: list transfers of specific user
+// List ALL transfers (ADMIN)
+router.get("/transfers", jwtVerify, requireRole("ADMIN"), listAllTransfers);
+
+// List all transfers for authenticated user
+router.get(
+  "/transfers/me",
+  jwtVerify,
+  requireRole("MEMBER", "CLIENT"),
+  listTransfersForAuthenticatedUser
+);
+
+// List transfers for a specific user (ADMIN)
 router.get(
   "/transfers/user/:userId",
   jwtVerify,
   requireRole("ADMIN"),
-  listUserTransfers
+  listTransfersForUser
 );
 
-// Get transfer by systemRef
+// List transfers by status (ADMIN)
 router.get(
-  "/transfers/ref/:systemRef",
-  jwtVerify, // or optional
-  getTransferByRef
+  "/transfers/status/:status",
+  jwtVerify,
+  requireRole("ADMIN"),
+  listTransfersByStatus
+);
+
+// List authenticated user's transfers filtered by status
+router.get(
+  "/transfers/me/status/:status",
+  jwtVerify,
+  requireRole("MEMBER", "CLIENT"),
+  listTransfersForAuthenticatedUserByStatus
+);
+
+router.post(
+  "/transfers/calculate-interest",
+  upload.none(),
+  jwtVerify,
+  requireRole("MEMBER", "CLIENT", "ADMIN"),
+  calculateInterest
 );
 
 // -------------------- Deposits --------------------
@@ -637,7 +728,7 @@ router.get(
 );
 
 // =====================
-// Address CRUD (per user)
+// Addresses
 // =====================
 
 // Create address for logged-in user
