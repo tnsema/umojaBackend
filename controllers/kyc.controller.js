@@ -5,6 +5,7 @@ import {
   approveKYCService,
   rejectKYCService,
   getKYCByUserService,
+  getAllKYCService,
 } from "../services/kyc.service.js";
 
 /**
@@ -330,6 +331,23 @@ export async function getKYCByUser(req, res) {
     return res.status(500).json({
       status: false,
       message: "Server error while fetching KYC by user",
+    });
+  }
+}
+
+export async function listAllKYC(req, res) {
+  try {
+    const data = await getAllKYCService();
+
+    return res.status(200).json({
+      status: true,
+      message: "All KYC submissions fetched",
+      data,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      status: false,
+      message: "Server error fetching KYC list",
     });
   }
 }

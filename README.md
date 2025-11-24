@@ -351,3 +351,7 @@ Extensions preserved correctly.
 # 🎉 END OF README
 
 Welcome to the team — and happy shipping! 🚀
+
+## Script to update data on the server
+
+/home/prodeasy/deploy-umoja.sh

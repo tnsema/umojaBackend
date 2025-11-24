@@ -1,73 +1,57 @@
 // controllers/transfer.controller.js
 
 import {
-  createTransferRequestService,
-  verifyTransferService,
-  listUserTransfersService,
-  getTransferByRefService,
+  createTransferService,
+  verifyTransferByReferenceService,
+  updateTransferStatusByReferenceService,
+  deleteTransferByIdService,
+  listAllTransfersService,
+  listTransfersForUserService,
+  listTransfersByStatusService,
+  listTransfersForUserByStatusService,
+  calculateInterestService,
 } from "../services/transfer.service.js";
 
 /**
  * POST /transfers
- *
- * Body (form-data):
- *  - recipientPhone
- *  - recipientFirstName?   (optional, for shadow client)
- *  - recipientLastName?    (optional)
+ * Body (form-data or JSON):
+ *  - receiverPhone
  *  - amount
- *  - bankRef?
- *  - proofDocId?
+ *  - description? (optional)
  *
  * Auth: jwtVerify (sender)
  */
-export async function createTransferRequest(req, res) {
+export async function createTransfer(req, res) {
   try {
     const senderId = req.payload?.userId;
-    const {
-      recipientPhone,
-      recipientFirstName,
-      recipientLastName,
-      amount,
-      bankRef,
-      proofDocId,
-    } = req.body || {};
+    const { receiverPhone, amount, description } = req.body || {};
 
-    const transfer = await createTransferRequestService({
+    const transfer = await createTransferService({
       senderId,
-      recipientPhone,
-      recipientFirstName,
-      recipientLastName,
+      receiverPhone,
       amount,
-      bankRef,
-      proofDocId,
+      description,
     });
 
     return res.status(201).json({
       status: true,
-      message: "Transfer request created successfully",
+      message: "Transfer created successfully",
       data: transfer,
     });
   } catch (err) {
-    console.error("Error in createTransferRequest:", err);
+    console.error("Error in createTransfer:", err);
 
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message: "senderId, recipientPhone and amount are required",
+        message: "senderId, receiverPhone and amount are required",
       });
     }
 
-    if (err.code === "INVALID_SENDER_ID") {
+    if (err.code === "INVALID_USER_ID") {
       return res.status(400).json({
         status: false,
         message: "Invalid senderId",
-      });
-    }
-
-    if (err.code === "INVALID_AMOUNT") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid amount",
       });
     }
 
@@ -78,82 +62,64 @@ export async function createTransferRequest(req, res) {
       });
     }
 
-    if (err.code === "ROLE_NOT_FOUND") {
-      return res.status(500).json({
+    if (err.code === "RECEIVER_NOT_FOUND") {
+      return res.status(404).json({
         status: false,
-        message: "CLIENT role not found for creating shadow user",
+        message: "Receiver not found with provided phone",
+      });
+    }
+
+    if (err.code === "SAME_USER") {
+      return res.status(400).json({
+        status: false,
+        message: "Sender and receiver cannot be the same user",
+      });
+    }
+
+    if (err.code === "INVALID_AMOUNT") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid transfer amount",
       });
     }
 
     return res.status(500).json({
       status: false,
-      message: "Server error while creating transfer request",
+      message: "Server error while creating transfer",
     });
   }
 }
 
 /**
- * POST /transfers/:transferId/verify
+ * GET /transfers/verify/:reference
  *
- * Body (form-data):
- *  - decision ("APPROVE" | "REJECT")
- *  - adminComment? (optional)
- *
- * Auth: jwtVerify + requireRole("ADMIN")
+ * Auth: can be public or protected, depending on design
  */
-export async function verifyTransfer(req, res) {
+export async function verifyTransferByReference(req, res) {
   try {
-    const adminId = req.payload?.userId;
-    const { transferId } = req.params;
-    const { decision, adminComment } = req.body || {};
+    const { reference } = req.params;
 
-    const result = await verifyTransferService({
-      transferId,
-      adminId,
-      decision,
-      adminComment,
-    });
+    const transfer = await verifyTransferByReferenceService({ reference });
 
     return res.status(200).json({
       status: true,
-      message: "Transfer verification processed successfully",
-      data: result,
+      message: "Transfer verified successfully",
+      data: transfer,
     });
   } catch (err) {
-    console.error("Error in verifyTransfer:", err);
+    console.error("Error in verifyTransferByReference:", err);
 
-    if (err.code === "FIELDS_REQUIRED") {
+    if (err.code === "REFERENCE_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message: "transferId, adminId and decision are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid transferId or adminId",
-      });
-    }
-
-    if (err.code === "INVALID_DECISION") {
-      return res.status(400).json({
-        status: false,
-        message: "Decision must be APPROVE or REJECT",
+        message: "Reference is required",
       });
     }
 
     if (err.code === "TRANSFER_NOT_FOUND") {
       return res.status(404).json({
         status: false,
-        message: "Transfer not found",
-      });
-    }
-
-    if (err.code === "NOT_VERIFIABLE") {
-      return res.status(400).json({
-        status: false,
-        message: "Transfer is not in a verifiable state",
+        message: "Transfer not found for given reference",
       });
     }
 
@@ -165,103 +131,88 @@ export async function verifyTransfer(req, res) {
 }
 
 /**
- * GET /transfers/me
+ * PATCH /transfers/:reference/status
+ * Body:
+ *  - newStatus ("PENDING" | "COMPLETED" | "FAILED" | "CANCELLED")
  *
- * Auth: jwtVerify
- *
- * OR
- * GET /transfers/user/:userId  (admin-only, depending on route config)
+ * Auth: jwtVerify + requireRole("ADMIN") (or as per your policy)
  */
-export async function listMyTransfers(req, res) {
+export async function updateTransferStatusByReference(req, res) {
   try {
-    const userId = req.payload?.userId;
+    const { reference } = req.params;
+    const { newStatus } = req.body || {};
 
-    const transfers = await listUserTransfersService(userId);
+    const transfer = await updateTransferStatusByReferenceService({
+      reference,
+      newStatus,
+    });
 
     return res.status(200).json({
       status: true,
-      data: transfers,
+      message: "Transfer status updated successfully",
+      data: transfer,
     });
   } catch (err) {
-    console.error("Error in listMyTransfers:", err);
+    console.error("Error in updateTransferStatusByReference:", err);
 
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message: "userId is required",
+        message: "reference and newStatus are required",
       });
     }
 
-    if (err.code === "INVALID_USER_ID") {
+    if (err.code === "INVALID_STATUS") {
       return res.status(400).json({
         status: false,
-        message: "Invalid userId",
+        message: "Invalid transfer status",
+      });
+    }
+
+    if (err.code === "TRANSFER_NOT_FOUND") {
+      return res.status(404).json({
+        status: false,
+        message: "Transfer not found for given reference",
       });
     }
 
     return res.status(500).json({
       status: false,
-      message: "Server error while listing user transfers",
-    });
-  }
-}
-
-export async function listUserTransfers(req, res) {
-  try {
-    const { userId } = req.params;
-
-    const transfers = await listUserTransfersService(userId);
-
-    return res.status(200).json({
-      status: true,
-      data: transfers,
-    });
-  } catch (err) {
-    console.error("Error in listUserTransfers:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "userId is required",
-      });
-    }
-
-    if (err.code === "INVALID_USER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid userId",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while listing user transfers",
+      message: "Server error while updating transfer status",
     });
   }
 }
 
 /**
- * GET /transfers/ref/:systemRef
+ * DELETE /transfers/:transferId
  *
- * Auth: jwtVerify (or relaxed, depending)
+ * Auth: jwtVerify + requireRole("ADMIN") or ownership checks if needed
  */
-export async function getTransferByRef(req, res) {
+export async function deleteTransferById(req, res) {
   try {
-    const { systemRef } = req.params;
+    const { transferId } = req.params;
 
-    const transfer = await getTransferByRefService(systemRef);
+    const deleted = await deleteTransferByIdService({ transferId });
 
     return res.status(200).json({
       status: true,
-      data: transfer,
+      message: "Transfer deleted successfully",
+      data: deleted,
     });
   } catch (err) {
-    console.error("Error in getTransferByRef:", err);
+    console.error("Error in deleteTransferById:", err);
 
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message: "systemRef is required",
+        message: "transferId is required",
+      });
+    }
+
+    if (err.code === "INVALID_TRANSFER_ID") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid transferId",
       });
     }
 
@@ -274,7 +225,227 @@ export async function getTransferByRef(req, res) {
 
     return res.status(500).json({
       status: false,
-      message: "Server error while fetching transfer by reference",
+      message: "Server error while deleting transfer",
+    });
+  }
+}
+
+/**
+ * GET /transfers
+ *
+ * Auth: jwtVerify + requireRole("ADMIN")
+ */
+export async function listAllTransfers(req, res) {
+  try {
+    const transfers = await listAllTransfersService();
+
+    return res.status(200).json({
+      status: true,
+      data: transfers,
+    });
+  } catch (err) {
+    console.error("Error in listAllTransfers:", err);
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error while listing all transfers",
+    });
+  }
+}
+
+/**
+ * GET /transfers/me
+ *
+ * Auth: jwtVerify
+ */
+export async function listTransfersForAuthenticatedUser(req, res) {
+  try {
+    const userId = req.payload?.userId;
+
+    const transfers = await listTransfersForUserService({ userId });
+
+    return res.status(200).json({
+      status: true,
+      data: transfers,
+    });
+  } catch (err) {
+    console.error("Error in listTransfersForAuthenticatedUser:", err);
+
+    if (err.code === "FIELDS_REQUIRED") {
+      return res.status(400).json({
+        status: false,
+        message: "userId is required",
+      });
+    }
+
+    if (err.code === "INVALID_USER_ID") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid userId",
+      });
+    }
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching transfers for user",
+    });
+  }
+}
+
+/**
+ * GET /transfers/user/:userId
+ *
+ * Auth: jwtVerify + requireRole("ADMIN") (or self)
+ */
+export async function listTransfersForUser(req, res) {
+  try {
+    const { userId } = req.params;
+
+    const transfers = await listTransfersForUserService({ userId });
+
+    return res.status(200).json({
+      status: true,
+      data: transfers,
+    });
+  } catch (err) {
+    console.error("Error in listTransfersForUser:", err);
+
+    if (err.code === "FIELDS_REQUIRED") {
+      return res.status(400).json({
+        status: false,
+        message: "userId is required",
+      });
+    }
+
+    if (err.code === "INVALID_USER_ID") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid userId",
+      });
+    }
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching transfers for user",
+    });
+  }
+}
+
+/**
+ * GET /transfers/status/:status
+ *
+ * Auth: jwtVerify + requireRole("ADMIN")
+ */
+export async function listTransfersByStatus(req, res) {
+  try {
+    const { status } = req.params;
+
+    const transfers = await listTransfersByStatusService({ status });
+
+    return res.status(200).json({
+      status: true,
+      data: transfers,
+    });
+  } catch (err) {
+    console.error("Error in listTransfersByStatus:", err);
+
+    if (err.code === "FIELDS_REQUIRED") {
+      return res.status(400).json({
+        status: false,
+        message: "status is required",
+      });
+    }
+
+    if (err.code === "INVALID_STATUS") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid status",
+      });
+    }
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching transfers by status",
+    });
+  }
+}
+
+/**
+ * GET /transfers/me/status/:status
+ *
+ * Auth: jwtVerify
+ */
+export async function listTransfersForAuthenticatedUserByStatus(req, res) {
+  try {
+    const userId = req.payload?.userId;
+    const { status } = req.params;
+
+    const transfers = await listTransfersForUserByStatusService({
+      userId,
+      status,
+    });
+
+    return res.status(200).json({
+      status: true,
+      data: transfers,
+    });
+  } catch (err) {
+    console.error("Error in listTransfersForAuthenticatedUserByStatus:", err);
+
+    if (err.code === "FIELDS_REQUIRED") {
+      return res.status(400).json({
+        status: false,
+        message: "userId and status are required",
+      });
+    }
+
+    if (err.code === "INVALID_USER_ID") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid userId",
+      });
+    }
+
+    if (err.code === "INVALID_STATUS") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid status",
+      });
+    }
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching transfers for user by status",
+    });
+  }
+}
+
+export async function calculateInterest(req, res) {
+  try {
+    const roles = req.payload?.roles || [];
+    const { amount } = req.body || {};
+
+    if (!amount) {
+      return res.status(400).json({
+        status: false,
+        message: "Amount is required",
+      });
+    }
+
+    const result = await calculateInterestService({
+      roles,
+      amount,
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Interest calculated successfully",
+      data: result,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      status: false,
+      message: err.message || "Server error while calculating interest",
     });
   }
 }
