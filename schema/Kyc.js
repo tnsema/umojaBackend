@@ -19,7 +19,7 @@ const kycSchema = new Schema(
 
     documentType: {
       type: String,
-      enum: ["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"],
+      enum: ["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE", "FOREIGN_PERMIT"],
       required: true,
     },
 

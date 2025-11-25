@@ -41,6 +41,7 @@ import {
   listTransfersByStatus,
   listTransfersForAuthenticatedUserByStatus,
   calculateInterest,
+  getTransferById,
 } from "../controllers/transfer.controller.js";
 import {
   createWalletTransaction,
@@ -666,6 +667,12 @@ router.post(
   calculateInterest
 );
 
+router.get(
+  "/transfers/:transferId",
+  jwtVerify,
+  requireRole("ADMIN", "MEMBER", "CLIENT"),
+  getTransferById
+);
 // -------------------- Deposits --------------------
 
 // Create a deposit (CLIENT / MEMBER uploads PoP)

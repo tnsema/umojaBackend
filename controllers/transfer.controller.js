@@ -10,6 +10,7 @@ import {
   listTransfersByStatusService,
   listTransfersForUserByStatusService,
   calculateInterestService,
+  getTransferByIdService,
 } from "../services/transfer.service.js";
 
 /**
@@ -446,6 +447,60 @@ export async function calculateInterest(req, res) {
     return res.status(500).json({
       status: false,
       message: err.message || "Server error while calculating interest",
+    });
+  }
+}
+
+export async function getTransferById(req, res) {
+  try {
+    const { transferId } = req.params;
+    const requesterId = req.payload?.userId;
+    const requesterRoles = req.payload?.roles || [];
+
+    const transfer = await getTransferByIdService({
+      transferId,
+      requesterId,
+      requesterRoles,
+    });
+
+    return res.status(200).json({
+      status: true,
+      data: transfer,
+    });
+  } catch (err) {
+    console.error("Error in getTransferById:", err);
+
+    if (err.code === "FIELDS_REQUIRED") {
+      return res.status(400).json({
+        status: false,
+        message: "transferId and requesterId are required",
+      });
+    }
+
+    if (err.code === "INVALID_ID") {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid transferId or requesterId",
+      });
+    }
+
+    if (err.code === "TRANSFER_NOT_FOUND") {
+      return res.status(404).json({
+        status: false,
+        message: "Transfer not found",
+      });
+    }
+
+    if (err.code === "FORBIDDEN") {
+      return res.status(403).json({
+        status: false,
+        message: "You are not allowed to view this transfer",
+      });
+    }
+
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching transfer",
     });
   }
 }

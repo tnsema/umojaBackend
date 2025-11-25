@@ -354,3 +354,45 @@ export async function calculateInterestService({ roles, amount }) {
     rate,
   };
 }
+
+export async function getTransferByIdService({
+  transferId,
+  requesterId,
+  requesterRoles = [],
+}) {
+  if (!transferId || !requesterId) {
+    const err = new Error("transferId and requesterId are required");
+    err.code = "FIELDS_REQUIRED";
+    throw err;
+  }
+
+  if (!isValidObjectId(transferId) || !isValidObjectId(requesterId)) {
+    const err = new Error("Invalid transferId or requesterId");
+    err.code = "INVALID_ID";
+    throw err;
+  }
+
+  const transfer = await Transfer.findById(transferId)
+    .populate("sender", "firstName lastName phone")
+    .populate("receiver", "firstName lastName phone");
+
+  if (!transfer) {
+    const err = new Error("Transfer not found");
+    err.code = "TRANSFER_NOT_FOUND";
+    throw err;
+  }
+
+  const isAdmin =
+    Array.isArray(requesterRoles) && requesterRoles.some((r) => r === "ADMIN");
+
+  const isSender = String(transfer.sender?._id) === String(requesterId);
+  const isReceiver = String(transfer.receiver?._id) === String(requesterId);
+
+  if (!isAdmin && !isSender && !isReceiver) {
+    const err = new Error("Not allowed to view this transfer");
+    err.code = "FORBIDDEN";
+    throw err;
+  }
+
+  return transfer;
+}
