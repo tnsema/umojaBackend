@@ -32,7 +32,7 @@ export async function submitKYC(req, res) {
     }
 
     // ====== KYC FIELDS FROM BODY ======
-    const { idNo, documentType } = req.body || {};
+    const { documentType } = req.body || {};
 
     // ====== ADDRESS FIELDS FROM BODY ======
     const {
@@ -72,7 +72,7 @@ export async function submitKYC(req, res) {
 
     const result = await submitKYCService({
       userId,
-      fields: { idNo, documentType },
+      fields: { documentType },
       docIds,
       address,
     });

@@ -14,7 +14,7 @@ const kycSchema = new Schema(
     idNo: {
       type: String,
       trim: true,
-      required: true,
+      default: "",
     },
 
     documentType: {

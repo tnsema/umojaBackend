@@ -42,11 +42,12 @@ export async function submitKYCService({
   docIds = {},
   address = {},
 }) {
-  const { idNo, documentType } = fields;
+  const { documentType } = fields;
   const { front, back, selfie } = docIds;
 
   // Required KYC fields (no "country" here anymore)
-  if (!userId || !idNo || !documentType || !front || !selfie) {
+
+  if (!userId || !documentType || !front || !selfie) {
     const err = new Error("Missing required KYC fields");
     err.code = "FIELDS_REQUIRED";
     throw err;
@@ -75,7 +76,7 @@ export async function submitKYCService({
   // 1) Create KYC record
   const kyc = await Kyc.create({
     userId,
-    idNo: String(idNo).trim(),
+    idNo: "",
     documentType: docTypeUpper,
     front,
     back: back || null,
