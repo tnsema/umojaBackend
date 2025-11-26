@@ -407,12 +407,20 @@ router.post(
   loanCtrl.repayLoan
 );
 
-// Borrower/Admin: cancel (you can tighten roles if you want)
+// Borrower/Admin: cancel
 router.post(
   "/loans/:loanId/cancel",
   upload.none(),
   jwtVerify,
   loanCtrl.cancelLoan
+);
+
+// 🔥 NEW: Borrower → get all my loans
+router.get(
+  "/loans/me",
+  jwtVerify,
+  requireRole("MEMBER", "CLIENT"),
+  loanCtrl.getMyLoans
 );
 
 // Guarantor: my agreed loans

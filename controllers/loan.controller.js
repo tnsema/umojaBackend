@@ -12,6 +12,9 @@ import {
   listAllLoansService,
 } from "../services/loan.service.js";
 
+import Models from "../model/model.js";
+const { loan: Loan } = Models;
+
 /**
  * POST /loans/request
  * Body (form-data):
@@ -122,7 +125,7 @@ export async function requestLoan(req, res) {
  *  - decision ("APPROVE" | "REJECT")
  *  - comment? (optional)
  *
- * Auth: jwtVerify + requireRole("MEMBER" or "CLIENT") at route level
+ * Auth: jwtVerify + requireRole("MEMBER" or "CLIENT")
  */
 export async function guarantorDecision(req, res) {
   try {
@@ -488,7 +491,7 @@ export async function repayLoan(req, res) {
  * Body (form-data):
  *  - reason
  *
- * Auth: jwtVerify (borrower or admin – enforce via route-level if needed)
+ * Auth: jwtVerify (borrower or admin)
  */
 export async function cancelLoan(req, res) {
   try {
@@ -634,6 +637,7 @@ export async function listAllLoans(req, res) {
 
     return res.status(200).json({
       status: true,
+      message: "All KYC submissions fetched",
       data: loans,
     });
   } catch (err) {
@@ -642,6 +646,91 @@ export async function listAllLoans(req, res) {
     return res.status(500).json({
       status: false,
       message: "Server error while listing loans",
+    });
+  }
+}
+
+/**
+ * GET /loans/me
+ * Logged-in borrower: fetch all their loans + dashboard metrics
+ */
+export async function getMyLoans(req, res) {
+  try {
+    const borrowerId = req.payload?.userId;
+
+    if (!borrowerId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const loans = await Loan.find({ borrowerId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!loans.length) {
+      return res.status(200).json({
+        status: true,
+        data: {
+          activeLoansCount: 0,
+          outstandingBalance: 0,
+          nextPaymentAmount: 0,
+          nextPaymentDueInDays: null,
+          loans: [],
+        },
+      });
+    }
+
+    const activeLoans = loans.filter((l) => l.status === "ACTIVE");
+
+    let outstandingBalance = 0;
+    let nextPaymentAmount = 0;
+    let nextPaymentDueInDays = null;
+
+    for (const loan of loans) {
+      if (!loan.repaymentSchedule || !loan.repaymentSchedule.length) continue;
+
+      const pending = loan.repaymentSchedule.filter(
+        (p) => p.status === "PENDING"
+      );
+
+      const sumPending = pending.reduce((acc, p) => acc + p.totalAmount, 0);
+      outstandingBalance += sumPending;
+
+      const earliest = pending.sort(
+        (a, b) => new Date(a.dueDate) - new Date(b.dueDate)
+      )[0];
+
+      if (earliest) {
+        const amt = earliest.totalAmount;
+        const dueDate = new Date(earliest.dueDate);
+        const today = new Date();
+
+        const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+
+        if (nextPaymentDueInDays === null || diffDays < nextPaymentDueInDays) {
+          nextPaymentAmount = amt;
+          nextPaymentDueInDays = diffDays;
+        }
+      }
+    }
+
+    return res.status(200).json({
+      status: true,
+      data: {
+        activeLoansCount: activeLoans.length,
+        outstandingBalance,
+        nextPaymentAmount,
+        nextPaymentDueInDays,
+        loans,
+      },
+    });
+  } catch (err) {
+    console.error("getMyLoans error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error while fetching borrower loans",
     });
   }
 }
