@@ -1,4 +1,4 @@
-// models/User.js
+// schema/User.js
 // Base user account; roles are stored in a separate Role collection.
 
 import mongoose from "mongoose";

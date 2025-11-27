@@ -49,6 +49,12 @@ import {
   getWalletTransaction,
 } from "../controllers/walletTransaction.controller.js";
 import * as addressCtrl from "../controllers/address.controller.js";
+import {
+  addContactById,
+  addContactByPhone,
+  listMyContacts,
+  removeContact,
+} from "../controllers/contact.controller.js";
 
 const router = express.Router();
 
@@ -770,5 +776,30 @@ router.patch(
 
 // Delete address
 router.delete("/addresses/:id", jwtVerify, addressCtrl.deleteMyAddress);
+
+// =====================
+// Contacts
+// =====================
+// List my contacts
+router.get("/users/me/contacts", jwtVerify, listMyContacts);
+
+// Add contact by userId
+router.post(
+  "/users/me/contacts/by-id",
+  upload.none(),
+  jwtVerify,
+  addContactById
+);
+
+// Add contact by phone
+router.post(
+  "/users/me/contacts/by-phone",
+  upload.none(),
+  jwtVerify,
+  addContactByPhone
+);
+
+// Remove a contact (contactId is the contact user's _id)
+router.delete("/users/me/contacts/:contactId", jwtVerify, removeContact);
 
 export default router;

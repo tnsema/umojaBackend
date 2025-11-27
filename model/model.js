@@ -24,6 +24,7 @@ import mainAccount from "../schema/MainAccout.js";
 import notification from "../schema/Notification.js";
 import address from "../schema/Address.js";
 import deposit from "../schema/Deposit.js";
+import userContact from "../schema/UserContact.js";
 
 const Models = {
   user, // base user accounts (multi-role via Role collection)
@@ -55,6 +56,7 @@ const Models = {
   notification, // user notifications
   address, // addresses linked to users
   deposit, // bank deposits linked to wallets
+  userContact, // user contact list entries
 };
 
 export default Models;
