@@ -8,9 +8,21 @@ const { transfer: Transfer, user: User } = Models;
 const { isValidObjectId } = mongoose;
 
 // Helper: generate unique reference
+/*
 function generateTransferReference() {
-  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `TRF-${Date.now()}-${randomPart}`;
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let randomPart = "";
+
+  for (let i = 0; i < 8; i++) {
+    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  return `TR${randomPart}`;
+}
+*/
+function generateTransferReference() {
+  const randomDigits = Math.floor(10000000 + Math.random() * 90000000);
+  return `TR${randomDigits}`;
 }
 
 // Helper: normalize status
