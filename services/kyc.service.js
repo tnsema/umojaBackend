@@ -8,7 +8,12 @@ import { upsertAddressForUserService } from "./address.service.js"; // same fold
 const { kyc: Kyc, user: User } = Models;
 const { isValidObjectId } = mongoose;
 
-const ALLOWED_DOC_TYPES = ["NATIONAL_ID", "PASSPORT", "DRIVERS_LICENSE"];
+const ALLOWED_DOC_TYPES = [
+  "NATIONAL_ID",
+  "PASSPORT",
+  "DRIVERS_LICENSE",
+  "PERMIT",
+];
 
 /**
  * submitKYCService
@@ -42,14 +47,38 @@ export async function submitKYCService({
   docIds = {},
   address = {},
 }) {
-  const { documentType } = fields;
+  const { documentType, idNo } = fields;
   const { front, back, selfie } = docIds;
+  const { streetNumber, streetName, suburb, city, province, country } = address;
 
   // Required KYC fields (no "country" here anymore)
 
-  if (!userId || !documentType || !front || !selfie) {
-    const err = new Error("Missing required KYC fields");
+  const missing = [];
+
+  // user Id
+  if (!userId) missing.push("userId missing");
+
+  // fields
+  if (!documentType) missing.push("documentType missing");
+  if (!idNo) missing.push("idNo missing");
+
+  // docs
+  if (!front) missing.push("front missing");
+  if (!back) missing.push("back missing");
+  if (!selfie) missing.push("selfie missing");
+
+  // address
+  if (!streetNumber) missing.push("street number missing");
+  if (!streetName) missing.push("street name missing");
+  if (!suburb) missing.push("suburb missing");
+  if (!city) missing.push("city missing");
+  if (!province) missing.push("province missing");
+  if (!country) missing.push("country missing");
+
+  if (missing.length > 0) {
+    const err = new Error(missing.join(", "));
     err.code = "FIELDS_REQUIRED";
+    err.missing = missing;
     throw err;
   }
 
@@ -67,11 +96,11 @@ export async function submitKYCService({
   }
 
   const docTypeUpper = String(documentType).trim().toUpperCase();
-  if (!ALLOWED_DOC_TYPES.includes(docTypeUpper)) {
+  /*if (!ALLOWED_DOC_TYPES.includes(docTypeUpper)) {
     const err = new Error("Invalid document type");
     err.code = "INVALID_DOC_TYPE";
     throw err;
-  }
+  }*/
 
   // 1) Create KYC record
   const kyc = await Kyc.create({

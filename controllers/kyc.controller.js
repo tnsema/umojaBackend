@@ -32,7 +32,7 @@ export async function submitKYC(req, res) {
     }
 
     // ====== KYC FIELDS FROM BODY ======
-    const { documentType } = req.body || {};
+    const { documentType, idNo } = req.body || {};
 
     // ====== ADDRESS FIELDS FROM BODY ======
     const {
@@ -70,9 +70,11 @@ export async function submitKYC(req, res) {
       country: country || "South Africa",
     };
 
+    const fields = { documentType, idNo };
+
     const result = await submitKYCService({
       userId,
-      fields: { documentType },
+      fields,
       docIds,
       address,
     });
@@ -88,7 +90,7 @@ export async function submitKYC(req, res) {
     if (err.code === "FIELDS_REQUIRED") {
       return res.status(400).json({
         status: false,
-        message: "Missing required KYC fields",
+        message: err.message,
       });
     }
 
