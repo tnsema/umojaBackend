@@ -17,10 +17,7 @@ const systemSettingSchema = new Schema(
     },
 
     // Value stored as string; you can JSON.parse or cast as needed
-    value: {
-      type: String,
-      required: true,
-    },
+    value: { type: Schema.Types.Mixed, required: true },
 
     // Description of what this setting controls
     description: {

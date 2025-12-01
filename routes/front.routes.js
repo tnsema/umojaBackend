@@ -13,7 +13,20 @@ import * as notifCtrl from "../controllers/notification.controller.js";
 import * as roleCtrl from "../controllers/role.controller.js";
 import * as contribCtrl from "../controllers/contribution.controller.js";
 import * as kycCtrl from "../controllers/kyc.controller.js";
-import * as loanCtrl from "../controllers/loan.controller.js";
+import {
+  createLoanController,
+  getLoanByIdController,
+  getMyLoansController,
+  getUserLoansAdminController,
+  getAllLoansController,
+  deleteLoanController,
+  adminReviewLoanController,
+  guarantorDecisionController,
+  borrowerConfirmLoanController,
+  disburseLoanController,
+  cancelLoanByBorrowerController,
+  cancelLoanByAdminController,
+} from "../controllers/loan.controller.js";
 import * as meetingCtrl from "../controllers/meeting.controller.js";
 import * as meetingAttCtrl from "../controllers/meetingAttendance.controller.js";
 import * as payoutCtrl from "../controllers/payout.controller.js";
@@ -55,6 +68,18 @@ import {
   listMyContacts,
   removeContact,
 } from "../controllers/contact.controller.js";
+import {
+  createInvoiceController,
+  getInvoiceController,
+  getMyInvoicesController,
+  getInvoicePdfController,
+} from "../controllers/invoice.controller.js";
+import {
+  generateLoanRepaymentScheduleController,
+  getRepaymentsForLoanController,
+  createInvoiceForRepaymentController,
+  markRepaymentLateAndGenerateInvoiceController,
+} from "../controllers/loanRepayment.controller.js";
 
 const router = express.Router();
 
@@ -359,94 +384,72 @@ router.get("/kyc/all", jwtVerify, requireRole("ADMIN"), kycCtrl.listAllKYC);
 // Loans
 // =========================
 
-// Borrower: request loan
-router.post(
-  "/loans/request",
-  upload.none(),
-  jwtVerify,
-  requireRole("MEMBER", "CLIENT"),
-  loanCtrl.requestLoan
-);
+// Create loan
+router.post("/loans", upload.none(), jwtVerify, createLoanController);
 
-// Guarantor: decision
-router.post(
-  "/loans/:loanId/guarantor-decision",
-  upload.none(),
-  jwtVerify,
-  requireRole("MEMBER", "CLIENT"),
-  loanCtrl.guarantorDecision
-);
+// Get logged-in user's loans
+router.get("/loans/me", jwtVerify, getMyLoansController);
 
-// Admin: review
-router.post(
-  "/loans/:loanId/admin-review",
-  upload.none(),
+// Get a single loan by ID
+router.get("/loans/:id", jwtVerify, getLoanByIdController);
+
+// Get logged-in user's loans
+router.get("/loans/me", jwtVerify, getMyLoansController);
+
+// Get loans for a specific user (borrower)
+router.get(
+  "/admin/users/:userId/loans",
   jwtVerify,
   requireRole("ADMIN"),
-  loanCtrl.adminReviewLoan
+  getUserLoansAdminController
 );
 
-// Borrower: confirm acceptance
-router.post(
-  "/loans/:loanId/confirm-acceptance",
-  upload.none(),
-  jwtVerify,
-  requireRole("MEMBER", "CLIENT"),
-  loanCtrl.borrowerConfirmAcceptance
-);
-
-// Admin: disburse
-router.post(
-  "/loans/:loanId/disburse",
-  upload.none(),
+// Get all loans with optional filters
+router.get(
+  "/admin/loans",
   jwtVerify,
   requireRole("ADMIN"),
-  loanCtrl.disburseLoan
+  getAllLoansController
 );
 
-// Borrower: repay
-router.post(
-  "/loans/:loanId/repay",
-  upload.none(),
-  jwtVerify,
-  requireRole("MEMBER", "CLIENT"),
-  loanCtrl.repayLoan
-);
-
-// Borrower/Admin: cancel
-router.post(
-  "/loans/:loanId/cancel",
-  upload.none(),
-  jwtVerify,
-  loanCtrl.cancelLoan
-);
-
-// 🔥 NEW: Borrower → get all my loans
-router.get(
-  "/loans/me",
-  jwtVerify,
-  requireRole("MEMBER", "CLIENT"),
-  loanCtrl.getMyLoans
-);
-
-// Guarantor: my agreed loans
-router.get(
-  "/loans/guarantor/me",
-  jwtVerify,
-  requireRole("MEMBER", "CLIENT"),
-  loanCtrl.getLoansAgreedByMe
-);
-
-// Admin: loans agreed by any member
-router.get(
-  "/loans/guarantor/:memberId",
+// Delete a loan
+router.delete(
+  "/admin/loans/:id",
   jwtVerify,
   requireRole("ADMIN"),
-  loanCtrl.getLoansAgreedByMember
+  deleteLoanController
 );
 
-// Admin: all loans
-router.get("/loans", jwtVerify, requireRole("ADMIN"), loanCtrl.listAllLoans);
+router.post(
+  "/loans/:id/confirm",
+  upload.none(),
+  jwtVerify,
+  borrowerConfirmLoanController
+);
+router.post(
+  "/loans/:id/cancel",
+  upload.none(),
+  jwtVerify,
+  cancelLoanByBorrowerController
+);
+
+// Guarantor
+router.post(
+  "/loans/:id/guarantor-decision",
+  upload.none(),
+  jwtVerify, // + maybe requireGuarantor
+  guarantorDecisionController
+);
+
+// Admin
+router.post(
+  "/admin/loans/:id/admin-review",
+  upload.none(),
+  jwtVerify,
+  adminReviewLoanController
+);
+router.post("/admin/loans/:id/disburse", jwtVerify, disburseLoanController);
+router.post("/admin/loans/:id/cancel", jwtVerify, cancelLoanByAdminController);
 
 // =========================
 // Meetings
@@ -801,5 +804,69 @@ router.post(
 
 // Remove a contact (contactId is the contact user's _id)
 router.delete("/users/me/contacts/:contactId", jwtVerify, removeContact);
+
+// =======================
+// Invoices
+// =====================
+// Create generic invoice (for logged-in user)
+// POST /api/invoices
+router.post("/invoices", upload.none(), jwtVerify, createInvoiceController);
+
+// Logged-in user's invoices
+// GET /api/invoices/me
+router.get("/invoices/me", upload.none(), jwtVerify, getMyInvoicesController);
+
+// Get single invoice
+// GET /api/invoices/:id
+router.get("/invoices/:id", upload.none(), jwtVerify, getInvoiceController);
+
+// Get invoice PDF
+// GET /api/invoices/:id/pdf
+router.get(
+  "/invoices/:id/pdf",
+  upload.none(),
+  jwtVerify,
+  getInvoicePdfController
+);
+
+// =======================
+// Loan Repayments
+// =======================
+// Generate schedule for a loan (admin/system)
+// POST /api/loans/:loanId/repayments/generate
+router.post(
+  "/loans/:loanId/repayments/generate",
+  upload.none(),
+  jwtVerify,
+  // you can add admin middleware here
+  generateLoanRepaymentScheduleController
+);
+
+// Get all repayments for a loan
+// GET /api/loans/:loanId/repayments
+router.get(
+  "/loans/:loanId/repayments",
+  upload.none(),
+  jwtVerify,
+  getRepaymentsForLoanController
+);
+
+// Create/re-issue invoice for a repayment
+// POST /api/repayments/:id/invoices
+router.post(
+  "/repayments/:id/invoices",
+  upload.none(),
+  jwtVerify,
+  createInvoiceForRepaymentController
+);
+
+// Mark repayment late and generate updated invoice
+// POST /api/repayments/:id/late
+router.post(
+  "/repayments/:id/late",
+  upload.none(),
+  jwtVerify,
+  markRepaymentLateAndGenerateInvoiceController
+);
 
 export default router;

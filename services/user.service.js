@@ -15,37 +15,32 @@ export async function registerClientService(payload) {
   if (!phone) {
     const err = new Error("Phone is required");
     err.code = "PHONE_REQUIRED";
+    err.statusCode = 400;
     throw err;
   }
 
   if (!firstName || !lastName) {
     const err = new Error("First name and last name are required");
     err.code = "NAME_REQUIRED";
+    err.statusCode = 400;
     throw err;
   }
 
-  // Check if phone or email already used
+  // Check if phone lready used
   const existingByPhone = await User.findOne({ phone });
   if (existingByPhone) {
     const err = new Error("Phone already in use");
     err.code = "PHONE_EXISTS";
+    err.statusCode = 409;
     throw err;
-  }
-
-  if (email) {
-    const existingByEmail = await User.findOne({ email });
-    if (existingByEmail) {
-      const err = new Error("Email already in use");
-      err.code = "EMAIL_EXISTS";
-      throw err;
-    }
   }
 
   // Find CLIENT role
   const clientRole = await Role.findOne({ name: "CLIENT" });
   if (!clientRole) {
-    const err = new Error("CLIENT role not found. Please seed roles first.");
+    const err = new Error("CLIENT role not found. Contact admin.");
     err.code = "ROLE_NOT_FOUND";
+    err.statusCode = 400;
     throw err;
   }
 
@@ -56,6 +51,7 @@ export async function registerClientService(payload) {
     if (!passwordStatus) {
       const err = new Error("Could not hash password");
       err.code = "HASH_ERROR";
+      err.statusCode = 500;
       throw err;
     }
     passwordHash = hash;
@@ -84,6 +80,7 @@ export async function createShadowClientService(phone, minimalData = {}) {
   if (!phone) {
     const err = new Error("Phone is required");
     err.code = "PHONE_REQUIRED";
+    err.statusCode = 400;
     throw err;
   }
 
@@ -97,6 +94,7 @@ export async function createShadowClientService(phone, minimalData = {}) {
   if (!clientRole) {
     const err = new Error("CLIENT role not found");
     err.code = "ROLE_NOT_FOUND";
+    err.statusCode = 500;
     throw err;
   }
 
@@ -178,6 +176,7 @@ export async function loginService({ identifier, password }) {
   if (!identifier || !password) {
     const err = new Error("Identifier and password are required");
     err.code = "LOGIN_REQUIRED";
+    err.statusCode = 400;
     throw err;
   }
 
@@ -187,15 +186,17 @@ export async function loginService({ identifier, password }) {
   }).populate("roles");
 
   if (!user || !user.passwordHash) {
-    const err = new Error("Invalid credentials");
+    const err = new Error("Invalid phone or password");
     err.code = "INVALID_CREDENTIALS";
+    err.statusCode = 401;
     throw err;
   }
 
   const { passwordStatus } = comparePassword(password, user.passwordHash);
   if (!passwordStatus) {
-    const err = new Error("Invalid credentials");
+    const err = new Error("Invalid phone or password");
     err.code = "INVALID_CREDENTIALS";
+    err.statusCode = 401;
     throw err;
   }
 
@@ -210,6 +211,7 @@ export async function loginService({ identifier, password }) {
   if (!authToken) {
     const err = new Error("Could not create auth token");
     err.code = "TOKEN_ERROR";
+    err.statusCode = 500;
     throw err;
   }
 

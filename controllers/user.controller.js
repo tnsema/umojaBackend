@@ -30,31 +30,12 @@ export async function login(req, res) {
     });
   } catch (err) {
     console.error("Error in login:", err);
+    const statusCode = err.statusCode || 500;
+    const message = err.message || "Server error during login.";
 
-    if (err.code === "LOGIN_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "Identifier and password are required",
-      });
-    }
-
-    if (err.code === "INVALID_CREDENTIALS") {
-      return res.status(401).json({
-        status: false,
-        message: "Invalid phone/email or password",
-      });
-    }
-
-    if (err.code === "TOKEN_ERROR") {
-      return res.status(500).json({
-        status: false,
-        message: "Could not generate authentication token",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error during login",
+      message,
     });
   }
 }
@@ -89,57 +70,13 @@ export async function registerClient(req, res) {
       },
     });
   } catch (err) {
-    console.error("Error in registerClient:", err);
+    console.error("createUserController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message = err.message || "Server error during registration";
 
-    if (err.code === "PHONE_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        field: "phone",
-        message: "Phone is required",
-      });
-    }
-
-    if (err.code === "NAME_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        field: "name",
-        message: "First and last name are required",
-      });
-    }
-
-    if (err.code === "PHONE_EXISTS") {
-      return res.status(409).json({
-        status: false,
-        field: "phone",
-        message: "This phone number is already used",
-      });
-    }
-
-    if (err.code === "EMAIL_EXISTS") {
-      return res.status(409).json({
-        status: false,
-        field: "email",
-        message: "This email is already used",
-      });
-    }
-
-    if (err.code === "ROLE_NOT_FOUND") {
-      return res.status(500).json({
-        status: false,
-        message: "CLIENT role not found. Please seed roles.",
-      });
-    }
-
-    if (err.code === "HASH_ERROR") {
-      return res.status(500).json({
-        status: false,
-        message: "Could not hash password",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error during registration",
+      message,
     });
   }
 }

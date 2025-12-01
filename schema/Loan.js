@@ -31,15 +31,17 @@ const loanSchema = new Schema(
     status: {
       type: String,
       enum: [
-        "PENDING_ADMIN", // admin must approve first before notifying guarantor
-        "PENDING_GUARANTOR", // waiting for guarantor approval
-        "APPROVED", // approved by guarantor and admin, then borrower is told that they qualify for disbursement
-        "ACTIVE", // funds disbursed to borrower
-        "REJECTED", // rejected by admin or guarantor
-        "CLOSED", // fully repaid
-        "DEFAULTED", // loan is in default
+        "PENDING_ADMIN_REVIEW", // user applied; waiting for admin to review
+        "PENDING_GUARANTOR_APPROVAL", // admin approved; waiting for guarantor decision
+        "PENDING_BORROWER_CONFIRMATION", // admin + guarantor approved; waiting for borrower to confirm they still want the loan
+        "APPROVED_FOR_DISBURSEMENT", // borrower confirmed; waiting for funds to be disbursed
+        "ACTIVE", // funds disbursed to borrower (loan is live, repayments in progress)
+        "REJECTED", // rejected by admin OR guarantor
+        "CANCELLED", // borrower declined / did not confirm / loan cancelled before disbursement
+        "CLOSED", // fully repaid according to repayment plan
+        "DEFAULTED", // borrower failed to pay, loan in default, collateral can be/has been taken
       ],
-      default: "PENDING_ADMIN",
+      default: "PENDING_ADMIN_REVIEW",
     },
 
     loanRequestDate: { type: Date, default: Date.now },

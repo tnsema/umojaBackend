@@ -1,736 +1,425 @@
 // controllers/loan.controller.js
 
 import {
-  requestLoanService,
-  guarantorDecisionService,
-  adminReviewLoanService,
-  borrowerConfirmAcceptanceService,
-  disburseLoanService,
-  repayLoanService,
-  cancelLoanService,
-  getLoansAgreedByMemberService,
-  listAllLoansService,
+  createLoan,
+  getLoanById as getLoanByIdService,
+  getUserLoans as getUserLoansService,
+  getAllLoans as getAllLoansService,
+  deleteLoan as deleteLoanService,
+  adminReviewLoan,
+  guarantorDecision,
+  borrowerConfirmLoan,
+  disburseLoan,
+  cancelLoan,
 } from "../services/loan.service.js";
 
-import Models from "../model/model.js";
-const { loan: Loan } = Models;
-
 /**
- * POST /loans/request
- * Body (form-data):
- *  - amount
- *  - purpose
- *  - termMonths
- *  - guarantorId
- *  - repaymentType? ("ONCE_OFF" | "MONTHLY")
- *  - interestRate? (number)
- *  - fees? (number)
- *
- * Auth: jwtVerify (borrower)
+ * POST /loans
+ * Logged-in borrower creates a loan request
+ * req.payload.userId -> borrowerId
+ * req.payload.roles  -> roles (e.g. ["MEMBER", "ADMIN"])
  */
-export async function requestLoan(req, res) {
+export async function createLoanController(req, res, next) {
   try {
-    const borrowerId = req.payload?.userId || req.body.borrowerId;
-    const {
-      amount,
-      purpose,
-      termMonths,
-      guarantorId,
-      repaymentType,
-      interestRate,
-      fees,
-    } = req.body || {};
+    const borrowerId = req.payload?.userId;
+    const roles = req.payload?.roles || [];
 
-    const loan = await requestLoanService({
-      borrowerId,
-      amount,
-      purpose,
-      termMonths,
+    const {
       guarantorId,
-      repaymentType,
-      interestRate,
-      fees,
+      repaymentPlanId,
+      requestedAmount,
+      purpose,
+      adminComment,
+      collateral,
+      references,
+    } = req.body;
+
+    const loan = await createLoan({
+      borrowerId,
+      roles,
+      guarantorId,
+      repaymentPlanId,
+      requestedAmount,
+      purpose,
+      adminComment,
+      collateral,
+      references,
     });
 
     return res.status(201).json({
       status: true,
-      message: "Loan request submitted successfully",
-      data: loan,
+      message: "Loan request submitted",
+      data: { loan },
     });
   } catch (err) {
-    console.error("Error in requestLoan:", err);
+    console.error("createLoanController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while creating the loan.";
 
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "borrowerId, amount and guarantorId are required",
-      });
-    }
-
-    if (err.code === "INVALID_USER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid borrowerId or guarantorId",
-      });
-    }
-
-    if (err.code === "SAME_USER") {
-      return res.status(400).json({
-        status: false,
-        message: "Borrower and guarantor cannot be the same user",
-      });
-    }
-
-    if (
-      err.code === "BORROWER_NOT_FOUND" ||
-      err.code === "GUARANTOR_NOT_FOUND"
-    ) {
-      return res.status(404).json({
-        status: false,
-        message: err.message,
-      });
-    }
-
-    if (err.code === "INVALID_AMOUNT") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loan amount",
-      });
-    }
-
-    if (err.code === "INVALID_REPAYMENT_TYPE") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid repayment type",
-      });
-    }
-
-    if (err.code === "INVALID_TERM") {
-      return res.status(400).json({
-        status: false,
-        message: "termMonths must be greater than 0 for MONTHLY repayment",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while requesting loan",
+      message,
     });
   }
 }
 
 /**
- * POST /loans/:loanId/guarantor-decision
- * Body (form-data):
- *  - decision ("APPROVE" | "REJECT")
- *  - comment? (optional)
- *
- * Auth: jwtVerify + requireRole("MEMBER" or "CLIENT")
+ * GET /loans/:id
+ * Get a single loan with collateral + references
  */
-export async function guarantorDecision(req, res) {
+export async function getLoanByIdController(req, res, next) {
   try {
-    const guarantorId = req.payload?.userId;
-    const { loanId } = req.params;
-    const { decision, comment } = req.body || {};
+    const { id } = req.params;
 
-    const loan = await guarantorDecisionService({
-      loanId,
-      guarantorId,
-      decision,
-      comment,
-    });
+    const data = await getLoanByIdService(id);
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      message: "Guarantor decision recorded successfully",
-      data: loan,
+      message: "Loan fetched successfully",
+      data,
     });
   } catch (err) {
-    console.error("Error in guarantorDecision:", err);
+    console.error("getLoanByIdController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while fetching the loan.";
 
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "loanId, guarantorId and decision are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loanId or guarantorId",
-      });
-    }
-
-    if (err.code === "LOAN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Loan not found",
-      });
-    }
-
-    if (err.code === "NOT_GUARANTOR") {
-      return res.status(403).json({
-        status: false,
-        message: "You are not the guarantor for this loan",
-      });
-    }
-
-    if (err.code === "INVALID_STATUS") {
-      return res.status(400).json({
-        status: false,
-        message: "Loan is not awaiting guarantor decision",
-      });
-    }
-
-    if (err.code === "INVALID_DECISION") {
-      return res.status(400).json({
-        status: false,
-        message: "Decision must be APPROVE or REJECT",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while recording guarantor decision",
+      message,
     });
   }
 }
 
 /**
- * POST /loans/:loanId/admin-review
- * Body (form-data):
- *  - decision ("APPROVE" | "REJECT")
- *  - comment? (optional)
- *
- * Auth: jwtVerify + requireRole("ADMIN")
+ * USER: GET /loans/me
+ * Uses getUserLoansService with borrowerId = logged-in user
  */
-export async function adminReviewLoan(req, res) {
-  try {
-    const adminId = req.payload?.userId;
-    const { loanId } = req.params;
-    const { decision, comment } = req.body || {};
-
-    const loan = await adminReviewLoanService({
-      loanId,
-      adminId,
-      decision,
-      comment,
-    });
-
-    return res.status(200).json({
-      status: true,
-      message: "Loan reviewed successfully",
-      data: loan,
-    });
-  } catch (err) {
-    console.error("Error in adminReviewLoan:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "loanId, adminId and decision are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loanId or adminId",
-      });
-    }
-
-    if (err.code === "ADMIN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Admin not found",
-      });
-    }
-
-    if (err.code === "LOAN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Loan not found",
-      });
-    }
-
-    if (err.code === "INVALID_STATUS") {
-      return res.status(400).json({
-        status: false,
-        message: "Loan is not pending admin review",
-      });
-    }
-
-    if (err.code === "INVALID_DECISION") {
-      return res.status(400).json({
-        status: false,
-        message: "Decision must be APPROVE or REJECT",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while reviewing loan",
-    });
-  }
-}
-
-/**
- * POST /loans/:loanId/confirm-acceptance
- * Auth: jwtVerify (borrower)
- */
-export async function borrowerConfirmAcceptance(req, res) {
-  try {
-    const borrowerId = req.payload?.userId;
-    const { loanId } = req.params;
-
-    const loan = await borrowerConfirmAcceptanceService({
-      loanId,
-      borrowerId,
-    });
-
-    return res.status(200).json({
-      status: true,
-      message: "Borrower acceptance recorded",
-      data: loan,
-    });
-  } catch (err) {
-    console.error("Error in borrowerConfirmAcceptance:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "loanId and borrowerId are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loanId or borrowerId",
-      });
-    }
-
-    if (err.code === "LOAN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Loan not found",
-      });
-    }
-
-    if (err.code === "NOT_BORROWER") {
-      return res.status(403).json({
-        status: false,
-        message: "You are not the borrower for this loan",
-      });
-    }
-
-    if (err.code === "INVALID_STATUS") {
-      return res.status(400).json({
-        status: false,
-        message: "Loan is not approved yet",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while confirming acceptance",
-    });
-  }
-}
-
-/**
- * POST /loans/:loanId/disburse
- * Auth: jwtVerify + requireRole("ADMIN")
- */
-export async function disburseLoan(req, res) {
-  try {
-    const adminId = req.payload?.userId;
-    const { loanId } = req.params;
-
-    const result = await disburseLoanService({ loanId, adminId });
-
-    return res.status(200).json({
-      status: true,
-      message: "Loan disbursed successfully",
-      data: result,
-    });
-  } catch (err) {
-    console.error("Error in disburseLoan:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "loanId and adminId are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loanId or adminId",
-      });
-    }
-
-    if (err.code === "ADMIN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Admin not found",
-      });
-    }
-
-    if (err.code === "LOAN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Loan not found",
-      });
-    }
-
-    if (err.code === "INVALID_STATUS") {
-      return res.status(400).json({
-        status: false,
-        message: "Loan is not approved for disbursement",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while disbursing loan",
-    });
-  }
-}
-
-/**
- * POST /loans/:loanId/repay
- * Body (form-data):
- *  - amount
- *
- * Auth: jwtVerify (borrower)
- */
-export async function repayLoan(req, res) {
-  try {
-    const payerId = req.payload?.userId;
-    const { loanId } = req.params;
-    const { amount } = req.body || {};
-
-    const result = await repayLoanService({ loanId, payerId, amount });
-
-    return res.status(200).json({
-      status: true,
-      message: "Loan repayment successful",
-      data: result,
-    });
-  } catch (err) {
-    console.error("Error in repayLoan:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "loanId, payerId and amount are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loanId or payerId",
-      });
-    }
-
-    if (err.code === "LOAN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Loan not found",
-      });
-    }
-
-    if (err.code === "NOT_BORROWER") {
-      return res.status(403).json({
-        status: false,
-        message: "Only the borrower can repay this loan",
-      });
-    }
-
-    if (err.code === "INVALID_STATUS") {
-      return res.status(400).json({
-        status: false,
-        message: "Loan is not active",
-      });
-    }
-
-    if (err.code === "INVALID_AMOUNT") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid repayment amount",
-      });
-    }
-
-    if (err.code === "WALLET_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Borrower wallet not found",
-      });
-    }
-
-    if (err.code === "INSUFFICIENT_FUNDS") {
-      return res.status(400).json({
-        status: false,
-        message: "Insufficient wallet balance",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while repaying loan",
-    });
-  }
-}
-
-/**
- * POST /loans/:loanId/cancel
- * Body (form-data):
- *  - reason
- *
- * Auth: jwtVerify (borrower or admin)
- */
-export async function cancelLoan(req, res) {
-  try {
-    const actorId = req.payload?.userId;
-    const { loanId } = req.params;
-    const { reason } = req.body || {};
-
-    const loan = await cancelLoanService({ loanId, actorId, reason });
-
-    return res.status(200).json({
-      status: true,
-      message: "Loan cancelled successfully",
-      data: loan,
-    });
-  } catch (err) {
-    console.error("Error in cancelLoan:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "loanId, actorId and reason are required",
-      });
-    }
-
-    if (err.code === "INVALID_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid loanId or actorId",
-      });
-    }
-
-    if (err.code === "ACTOR_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Actor user not found",
-      });
-    }
-
-    if (err.code === "LOAN_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Loan not found",
-      });
-    }
-
-    if (err.code === "INVALID_STATUS") {
-      return res.status(400).json({
-        status: false,
-        message: "Cannot cancel a loan that is ACTIVE, CLOSED, or DEFAULTED",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while cancelling loan",
-    });
-  }
-}
-
-/**
- * GET /loans/guarantor/me
- * Auth: jwtVerify
- */
-export async function getLoansAgreedByMe(req, res) {
-  try {
-    const memberId = req.payload?.userId;
-
-    const loans = await getLoansAgreedByMemberService(memberId);
-
-    return res.status(200).json({
-      status: true,
-      data: loans,
-    });
-  } catch (err) {
-    console.error("Error in getLoansAgreedByMe:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "memberId is required",
-      });
-    }
-
-    if (err.code === "INVALID_MEMBER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid memberId",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while fetching loans agreed by member",
-    });
-  }
-}
-
-/**
- * GET /loans/guarantor/:memberId
- * Auth: jwtVerify + requireRole("ADMIN") (or same user)
- */
-export async function getLoansAgreedByMember(req, res) {
-  try {
-    const { memberId } = req.params;
-
-    const loans = await getLoansAgreedByMemberService(memberId);
-
-    return res.status(200).json({
-      status: true,
-      data: loans,
-    });
-  } catch (err) {
-    console.error("Error in getLoansAgreedByMember:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "memberId is required",
-      });
-    }
-
-    if (err.code === "INVALID_MEMBER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid memberId",
-      });
-    }
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while fetching loans agreed by member",
-    });
-  }
-}
-
-/**
- * GET /loans
- * Auth: jwtVerify + requireRole("ADMIN")
- */
-export async function listAllLoans(req, res) {
-  try {
-    const loans = await listAllLoansService();
-
-    return res.status(200).json({
-      status: true,
-      message: "All KYC submissions fetched",
-      data: loans,
-    });
-  } catch (err) {
-    console.error("Error in listAllLoans:", err);
-
-    return res.status(500).json({
-      status: false,
-      message: "Server error while listing loans",
-    });
-  }
-}
-
-/**
- * GET /loans/me
- * Logged-in borrower: fetch all their loans + dashboard metrics
- */
-export async function getMyLoans(req, res) {
+export async function getMyLoansController(req, res, next) {
   try {
     const borrowerId = req.payload?.userId;
 
     if (!borrowerId) {
       return res.status(401).json({
         status: false,
-        message: "Unauthorized",
+        message: "User is not authenticated",
       });
     }
 
-    const loans = await Loan.find({ borrowerId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const { page, limit, status } = req.query;
 
-    if (!loans.length) {
-      return res.status(200).json({
-        status: true,
-        data: {
-          activeLoansCount: 0,
-          outstandingBalance: 0,
-          nextPaymentAmount: 0,
-          nextPaymentDueInDays: null,
-          loans: [],
-        },
-      });
-    }
+    const result = await getUserLoansService({
+      borrowerId,
+      page,
+      limit,
+      status,
+    });
 
-    const activeLoans = loans.filter((l) => l.status === "ACTIVE");
-
-    let outstandingBalance = 0;
-    let nextPaymentAmount = 0;
-    let nextPaymentDueInDays = null;
-
-    for (const loan of loans) {
-      if (!loan.repaymentSchedule || !loan.repaymentSchedule.length) continue;
-
-      const pending = loan.repaymentSchedule.filter(
-        (p) => p.status === "PENDING"
-      );
-
-      const sumPending = pending.reduce((acc, p) => acc + p.totalAmount, 0);
-      outstandingBalance += sumPending;
-
-      const earliest = pending.sort(
-        (a, b) => new Date(a.dueDate) - new Date(b.dueDate)
-      )[0];
-
-      if (earliest) {
-        const amt = earliest.totalAmount;
-        const dueDate = new Date(earliest.dueDate);
-        const today = new Date();
-
-        const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-
-        if (nextPaymentDueInDays === null || diffDays < nextPaymentDueInDays) {
-          nextPaymentAmount = amt;
-          nextPaymentDueInDays = diffDays;
-        }
-      }
-    }
-
-    return res.status(200).json({
+    return res.json({
       status: true,
-      data: {
-        activeLoansCount: activeLoans.length,
-        outstandingBalance,
-        nextPaymentAmount,
-        nextPaymentDueInDays,
-        loans,
-      },
+      message: "Loans fetched successfully",
+      data: result,
     });
   } catch (err) {
-    console.error("getMyLoans error:", err);
-    return res.status(500).json({
+    console.error("getMyLoansController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching the user's loans.";
+
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while fetching borrower loans",
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: GET /admin/users/:userId/loans
+ * Also uses getUserLoansService, but borrowerId comes from route param
+ */
+export async function getUserLoansAdminController(req, res, next) {
+  try {
+    const { userId } = req.params; // borrowerId
+    const { page, limit, status } = req.query;
+
+    const result = await getUserLoansService({
+      borrowerId: userId,
+      page,
+      limit,
+      status,
+    });
+
+    return res.json({
+      status: true,
+      message: "User loans fetched successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("getUserLoansAdminController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching loans for this user.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: GET /admin/loans
+ * Uses getAllLoansService – all loans (with optional filters)
+ */
+export async function getAllLoansController(req, res, next) {
+  try {
+    const { page, limit, status, borrowerId, guarantorId } = req.query;
+
+    const result = await getAllLoansService({
+      page,
+      limit,
+      status,
+      borrowerId,
+      guarantorId,
+    });
+
+    return res.json({
+      status: true,
+      message: "All loans fetched successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("getAllLoansController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while fetching all loans.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: DELETE /admin/loans/:id
+ * Deletes loan + its collateral + references
+ */
+export async function deleteLoanController(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const result = await deleteLoanService(id);
+
+    return res.json({
+      status: true,
+      message: "Loan deleted successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("deleteLoanController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while deleting the loan.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: POST /admin/loans/:id/admin-review
+ * Body: { approve: boolean, adminComment?: string }
+ */
+export async function adminReviewLoanController(req, res) {
+  try {
+    const { id } = req.params;
+    const { approve, adminComment } = req.body;
+
+    const loan = await adminReviewLoan(id, { approve, adminComment });
+
+    return res.json({
+      status: true,
+      message: approve
+        ? "Loan approved by admin and sent to guarantor"
+        : "Loan rejected by admin",
+      data: { loan },
+    });
+  } catch (err) {
+    console.error("adminReviewLoanController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while processing admin loan review.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * GUARANTOR: POST /loans/:id/guarantor-decision
+ * Body: { approve: boolean }
+ */
+export async function guarantorDecisionController(req, res) {
+  try {
+    const { id } = req.params;
+    const guarantorId = req.payload?.userId; // guarantor is logged-in user
+    const { approve } = req.body;
+
+    const loan = await guarantorDecision(id, guarantorId, { approve });
+
+    return res.json({
+      status: true,
+      message: approve
+        ? "Loan approved by guarantor and sent to borrower for confirmation"
+        : "Loan rejected by guarantor",
+      data: { loan },
+    });
+  } catch (err) {
+    console.error("guarantorDecisionController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while processing guarantor decision.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * BORROWER: POST /loans/:id/confirm
+ * Body: { confirm: boolean }
+ */
+export async function borrowerConfirmLoanController(req, res) {
+  try {
+    const { id } = req.params;
+    const borrowerId = req.payload?.userId;
+    const { confirm } = req.body;
+
+    const loan = await borrowerConfirmLoan(id, borrowerId, { confirm });
+
+    return res.json({
+      status: true,
+      message: confirm
+        ? "Loan confirmed by borrower and approved for disbursement"
+        : "Loan cancelled by borrower",
+      data: { loan },
+    });
+  } catch (err) {
+    console.error("borrowerConfirmLoanController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while processing borrower confirmation.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: POST /admin/loans/:id/disburse
+ * No special body needed (unless you pass payment metadata later)
+ */
+export async function disburseLoanController(req, res) {
+  try {
+    const { id } = req.params;
+
+    const loan = await disburseLoan(id);
+
+    return res.json({
+      status: true,
+      message: "Loan disbursed and now ACTIVE",
+      data: { loan },
+    });
+  } catch (err) {
+    console.error("disburseLoanController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while disbursing the loan.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * BORROWER: POST /loans/:id/cancel
+ * Cancels the loan BEFORE it is disbursed
+ */
+export async function cancelLoanByBorrowerController(req, res) {
+  try {
+    const { id } = req.params;
+    const borrowerId = req.payload?.userId;
+
+    // Optional: verify borrower is owner
+    // We can reuse getLoanByIdService or just quickly check the doc:
+    const { loan } = await getLoanByIdService(id);
+    if (!loan || String(loan.borrowerId) !== String(borrowerId)) {
+      return res.status(403).json({
+        status: false,
+        message: "You are not allowed to cancel this loan",
+      });
+    }
+
+    const updatedLoan = await cancelLoan(id, { by: "BORROWER" });
+
+    return res.json({
+      status: true,
+      message: "Loan cancelled by borrower",
+      data: { loan: updatedLoan },
+    });
+  } catch (err) {
+    console.error("cancelLoanByBorrowerController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while cancelling the loan.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: POST /admin/loans/:id/cancel
+ */
+export async function cancelLoanByAdminController(req, res) {
+  try {
+    const { id } = req.params;
+
+    const loan = await cancelLoan(id, { by: "ADMIN" });
+
+    return res.json({
+      status: true,
+      message: "Loan cancelled by admin",
+      data: { loan },
+    });
+  } catch (err) {
+    console.error("cancelLoanByAdminController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while cancelling the loan.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
     });
   }
 }

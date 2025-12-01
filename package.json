@@ -5,11 +5,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "nodemon babel_hook.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "development": "NODE_ENV=development nodemon babel_hook.cjs",
-    "production": "NODE_ENV=production node babel_hook.cjs",
-    "seed:roles": "cross-env NODE_ENV=development node seed/seedRoles.js"
+    "development": "cross-env NODE_ENV=development nodemon --legacy-watch server.js",
+    "production": "cross-env NODE_ENV=production node server.js",
+    "start": "npm run development",
+    "seed:roles": "cross-env NODE_ENV=development node seed/seedRoles.js",
+    "seed:repayment-plans": "cross-env NODE_ENV=development node seed/seedRepaymentPlans.js"
   },
   "repository": {
     "type": "git",
@@ -33,7 +33,8 @@
     "mongoose": "^8.19.3",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.10",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "puppeteer": "^24.31.0"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",

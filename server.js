@@ -42,7 +42,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", frontroutes);
 
 app.get("/", (_req, res) => {
-  res.send("Hello Do1!");
+  res.send("Hello from Umoja Backend API");
 });
 
 app.get("/health", (_req, res) => {
