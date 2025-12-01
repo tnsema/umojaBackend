@@ -25,6 +25,9 @@ import notification from "../schema/Notification.js";
 import address from "../schema/Address.js";
 import deposit from "../schema/Deposit.js";
 import userContact from "../schema/UserContact.js";
+import loanCollateral from "../schema/LoanCollateral.js";
+import repaymentPlan from "../schema/RepaymentPlan.js";
+import loanReference from "../schema/LoanReference.js";
 
 const Models = {
   user, // base user accounts (multi-role via Role collection)
@@ -57,6 +60,9 @@ const Models = {
   address, // addresses linked to users
   deposit, // bank deposits linked to wallets
   userContact, // user contact list entries
+  loanCollateral,
+  repaymentPlan,
+  loanReference,
 };
 
 export default Models;
