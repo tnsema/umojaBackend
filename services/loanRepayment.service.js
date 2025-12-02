@@ -8,45 +8,88 @@ const { loan: Loan, loanRepayment: LoanRepayment } = Models;
 const { isValidObjectId } = mongoose;
 
 /**
- * Generate repayment schedule for a loan.
- * E.g. totalInstallments = 3 → 3 LoanRepayment docs.
+ * NEW: Generate repayment schedule for a loan, using only backend data:
  *
- * You can adjust how principal/interest are split.
+ * - totalInstallments: from loan.repaymentPlanId.numberOfMonths
+ * - startDate:         from loan.disbursedAt (or now if missing)
+ * - principal:         from loan.requestedAmount
+ * - interest:          from (loan.totalRepayable - requestedAmount - penaltyFees)
+ *
+ * Creates N LoanRepayment docs with:
+ *  - installmentNumber (1..N)
+ *  - totalInstallments
+ *  - dueDate (month by month)
+ *  - principalAmount / interestAmount / lateFeeAmount / totalAmount
+ *  - status = PENDING
  */
-export async function generateLoanRepaymentSchedule({
-  loanId,
-  totalInstallments,
-  startDate,
-  principalPerInstallment,
-  interestPerInstallment,
-}) {
+export async function generateScheduleForLoan(loanId) {
   if (!isValidObjectId(loanId)) {
     const err = new Error("Invalid loan ID");
     err.statusCode = 400;
     throw err;
   }
 
-  const loan = await Loan.findById(loanId);
+  const loan = await Loan.findById(loanId).populate("repaymentPlanId");
   if (!loan) {
     const err = new Error("Loan not found");
     err.statusCode = 404;
     throw err;
   }
 
+  const plan = loan.repaymentPlanId;
+  if (!plan || !plan.numberOfMonths) {
+    const err = new Error("Loan has no valid repayment plan attached");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const totalInstallments = plan.numberOfMonths;
+
+  // Base date for 1st installment
+  const baseDate = loan.disbursedAt ? new Date(loan.disbursedAt) : new Date();
+
+  const totalPrincipal = Number(loan.requestedAmount || 0);
+  const totalRepayable = Number(loan.totalRepayable || 0);
+  const totalPenalties = Number(loan.penaltyFees || 0);
+
+  // Total interest = everything above (principal + penalties)
+  const totalInterest = Math.max(
+    totalRepayable - totalPrincipal - totalPenalties,
+    0
+  );
+
+  // Split principal & interest across installments
+  const principalPerInstallmentRaw = totalPrincipal / totalInstallments;
+  const interestPerInstallmentRaw = totalInterest / totalInstallments;
+
   const docs = [];
-  const baseDate = new Date(startDate || new Date());
+  let principalAccum = 0;
+  let interestAccum = 0;
 
   for (let i = 1; i <= totalInstallments; i++) {
+    // Equal-ish split, adjust last installment for rounding
+    let principalAmount =
+      i < totalInstallments
+        ? Number(principalPerInstallmentRaw.toFixed(2))
+        : Number((totalPrincipal - principalAccum).toFixed(2));
+
+    let interestAmount =
+      i < totalInstallments
+        ? Number(interestPerInstallmentRaw.toFixed(2))
+        : Number((totalInterest - interestAccum).toFixed(2));
+
+    principalAccum += principalAmount;
+    interestAccum += interestAmount;
+
     const dueDate = new Date(baseDate);
+    // month by month: 1st = base, 2nd = +1 month, etc.
     dueDate.setMonth(dueDate.getMonth() + (i - 1));
 
-    const principalAmount = Number(principalPerInstallment || 0);
-    const interestAmount = Number(interestPerInstallment || 0);
     const lateFeeAmount = 0;
     const totalAmount = principalAmount + interestAmount + lateFeeAmount;
 
     docs.push({
-      loanId,
+      loanId: loan._id,
       installmentNumber: i,
       totalInstallments,
       dueDate,
@@ -58,8 +101,27 @@ export async function generateLoanRepaymentSchedule({
     });
   }
 
+  // Optional: clear old schedule if regenerating
+  await LoanRepayment.deleteMany({ loanId: loan._id });
+
   const repayments = await LoanRepayment.insertMany(docs);
   return repayments;
+}
+
+/**
+ * LEGACY / COMPAT WRAPPER:
+ * If something still calls generateLoanRepaymentSchedule({...}),
+ * we now just use loanId and ignore the extra fields
+ */
+export async function generateLoanRepaymentSchedule({
+  loanId,
+  // other fields are ignored now, everything comes from DB:
+  // totalInstallments,
+  // startDate,
+  // principalPerInstallment,
+  // interestPerInstallment,
+}) {
+  return generateScheduleForLoan(loanId);
 }
 
 /**

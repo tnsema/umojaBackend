@@ -1,7 +1,7 @@
 // controllers/loanRepayment.controller.js
 
 import {
-  generateLoanRepaymentSchedule,
+  generateScheduleForLoan,
   createInvoiceForRepayment,
   markRepaymentLateAndGenerateInvoice,
   getRepaymentsForLoan,
@@ -9,26 +9,20 @@ import {
 
 /**
  * POST /api/loans/:loanId/repayments/generate
- * Admin/system: generate schedule for a loan
- * Body: { totalInstallments, startDate?, principalPerInstallment, interestPerInstallment }
+ *
+ * Admin/system: generate or regenerate schedule for a loan.
+ * No body is required – everything is derived from:
+ *  - loan.requestedAmount
+ *  - loan.totalRepayable
+ *  - loan.penaltyFees
+ *  - loan.disbursedAt
+ *  - repaymentPlan.numberOfMonths
  */
 export async function generateLoanRepaymentScheduleController(req, res) {
   try {
     const { loanId } = req.params;
-    const {
-      totalInstallments,
-      startDate,
-      principalPerInstallment,
-      interestPerInstallment,
-    } = req.body;
 
-    const repayments = await generateLoanRepaymentSchedule({
-      loanId,
-      totalInstallments,
-      startDate,
-      principalPerInstallment,
-      interestPerInstallment,
-    });
+    const repayments = await generateScheduleForLoan(loanId);
 
     return res.status(201).json({
       status: true,
@@ -81,13 +75,13 @@ export async function getRepaymentsForLoanController(req, res) {
 /**
  * POST /api/repayments/:id/invoices
  * Create (or re-issue) an invoice for a given repayment
- * Body: { loanRef? } (optional)
+ * Body (optional): { loanRef? }
  */
 export async function createInvoiceForRepaymentController(req, res) {
   try {
     const userId = req.payload?.userId;
     const { id: repaymentId } = req.params;
-    const { loanRef } = req.body;
+    const { loanRef } = req.body ?? {};
 
     if (!userId) {
       return res.status(401).json({
@@ -130,7 +124,7 @@ export async function markRepaymentLateAndGenerateInvoiceController(req, res) {
   try {
     const userId = req.payload?.userId;
     const { id: repaymentId } = req.params;
-    const { lateFeeAmount } = req.body;
+    const { lateFeeAmount } = req.body ?? {};
 
     if (!userId) {
       return res.status(401).json({

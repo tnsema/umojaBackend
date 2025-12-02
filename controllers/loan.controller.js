@@ -19,7 +19,7 @@ import {
  * req.payload.userId -> borrowerId
  * req.payload.roles  -> roles (e.g. ["MEMBER", "ADMIN"])
  */
-export async function createLoanController(req, res, next) {
+export async function createLoanController(req, res) {
   try {
     const borrowerId = req.payload?.userId;
     const roles = req.payload?.roles || [];
@@ -32,7 +32,7 @@ export async function createLoanController(req, res, next) {
       adminComment,
       collateral,
       references,
-    } = req.body;
+    } = req.body ?? {};
 
     const loan = await createLoan({
       borrowerId,
@@ -68,7 +68,7 @@ export async function createLoanController(req, res, next) {
  * GET /loans/:id
  * Get a single loan with collateral + references
  */
-export async function getLoanByIdController(req, res, next) {
+export async function getLoanByIdController(req, res) {
   try {
     const { id } = req.params;
 
@@ -96,7 +96,7 @@ export async function getLoanByIdController(req, res, next) {
  * USER: GET /loans/me
  * Uses getUserLoansService with borrowerId = logged-in user
  */
-export async function getMyLoansController(req, res, next) {
+export async function getMyLoansController(req, res) {
   try {
     const borrowerId = req.payload?.userId;
 
@@ -139,7 +139,7 @@ export async function getMyLoansController(req, res, next) {
  * ADMIN: GET /admin/users/:userId/loans
  * Also uses getUserLoansService, but borrowerId comes from route param
  */
-export async function getUserLoansAdminController(req, res, next) {
+export async function getUserLoansAdminController(req, res) {
   try {
     const { userId } = req.params; // borrowerId
     const { page, limit, status } = req.query;
@@ -174,7 +174,7 @@ export async function getUserLoansAdminController(req, res, next) {
  * ADMIN: GET /admin/loans
  * Uses getAllLoansService – all loans (with optional filters)
  */
-export async function getAllLoansController(req, res, next) {
+export async function getAllLoansController(req, res) {
   try {
     const { page, limit, status, borrowerId, guarantorId } = req.query;
 
@@ -208,7 +208,7 @@ export async function getAllLoansController(req, res, next) {
  * ADMIN: DELETE /admin/loans/:id
  * Deletes loan + its collateral + references
  */
-export async function deleteLoanController(req, res, next) {
+export async function deleteLoanController(req, res) {
   try {
     const { id } = req.params;
 
@@ -239,7 +239,14 @@ export async function deleteLoanController(req, res, next) {
 export async function adminReviewLoanController(req, res) {
   try {
     const { id } = req.params;
-    const { approve, adminComment } = req.body;
+    const { approve, adminComment } = req.body ?? {};
+
+    if (typeof approve !== "boolean") {
+      return res.status(400).json({
+        status: false,
+        message: "Field 'approve' (boolean) is required",
+      });
+    }
 
     const loan = await adminReviewLoan(id, { approve, adminComment });
 
@@ -272,7 +279,14 @@ export async function guarantorDecisionController(req, res) {
   try {
     const { id } = req.params;
     const guarantorId = req.payload?.userId; // guarantor is logged-in user
-    const { approve } = req.body;
+    const { approve } = req.body ?? {};
+
+    if (typeof approve !== "boolean") {
+      return res.status(400).json({
+        status: false,
+        message: "Field 'approve' (boolean) is required",
+      });
+    }
 
     const loan = await guarantorDecision(id, guarantorId, { approve });
 
@@ -305,7 +319,14 @@ export async function borrowerConfirmLoanController(req, res) {
   try {
     const { id } = req.params;
     const borrowerId = req.payload?.userId;
-    const { confirm } = req.body;
+    const { confirm } = req.body ?? {};
+
+    if (typeof confirm !== "boolean") {
+      return res.status(400).json({
+        status: false,
+        message: "Field 'confirm' (boolean) is required",
+      });
+    }
 
     const loan = await borrowerConfirmLoan(id, borrowerId, { confirm });
 
@@ -333,6 +354,10 @@ export async function borrowerConfirmLoanController(req, res) {
 /**
  * ADMIN: POST /admin/loans/:id/disburse
  * No special body needed (unless you pass payment metadata later)
+ * When disbursed:
+ *  - loan becomes ACTIVE
+ *  - disbursedAt is set
+ *  - repayment schedule is auto-generated
  */
 export async function disburseLoanController(req, res) {
   try {
@@ -367,8 +392,6 @@ export async function cancelLoanByBorrowerController(req, res) {
     const { id } = req.params;
     const borrowerId = req.payload?.userId;
 
-    // Optional: verify borrower is owner
-    // We can reuse getLoanByIdService or just quickly check the doc:
     const { loan } = await getLoanByIdService(id);
     if (!loan || String(loan.borrowerId) !== String(borrowerId)) {
       return res.status(403).json({

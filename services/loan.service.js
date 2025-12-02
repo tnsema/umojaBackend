@@ -7,6 +7,7 @@ import {
   getMemberLoanInterestRate,
   getDefaultPenaltyFee,
 } from "./settings.service.js";
+import { generateScheduleForLoan } from "./loanRepayment.service.js";
 
 const {
   loan: Loan,
@@ -475,6 +476,10 @@ export async function borrowerConfirmLoan(loanId, borrowerId, { confirm }) {
  * - From: APPROVED_FOR_DISBURSEMENT
  * - To:   ACTIVE
  * (Here you would also trigger wallet crediting, etc.)
+ *
+ * When it becomes ACTIVE, we also:
+ *  - set disbursedAt
+ *  - auto-generate repayment schedule based on plan + loan amounts
  */
 export async function disburseLoan(loanId) {
   if (!isValidObjectId(loanId)) {
@@ -497,10 +502,25 @@ export async function disburseLoan(loanId) {
   }
 
   // TODO: integrate with wallet / payments system
+
   loan.status = "ACTIVE";
-  loan.disbursedAt = new Date();
+  loan.disbursedAt = loan.disbursedAt || new Date();
 
   await loan.save();
+
+  // 🔥 Auto-generate repayment schedule based on this loan
+  try {
+    await generateScheduleForLoan(loan._id);
+  } catch (scheduleErr) {
+    console.error(
+      "Failed to generate repayment schedule for loan:",
+      loan._id,
+      scheduleErr
+    );
+    // You can decide to throw here if schedule generation is critical
+    // throw scheduleErr;
+  }
+
   return loan;
 }
 

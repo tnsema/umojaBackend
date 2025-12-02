@@ -27,6 +27,7 @@ const loanSchema = new Schema(
     totalRepayable: { type: Number, default: 0 }, // decimal(18,2)
     interestRate: { type: Number, default: 0 }, // decimal(5,4) e.g. 12.5
     penaltyFees: { type: Number, default: 0 }, // decimal(18,2)
+    balance: { type: Number, default: 0 }, // decimal(18,2)
 
     status: {
       type: String,
