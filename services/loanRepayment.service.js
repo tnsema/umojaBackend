@@ -36,60 +36,53 @@ export async function generateScheduleForLoan(loanId) {
     throw err;
   }
 
-  const plan = loan.repaymentPlanId;
-  if (!plan || !plan.numberOfMonths) {
-    const err = new Error("Loan has no valid repayment plan attached");
+  if (!loan.repaymentPlanId) {
+    const err = new Error("Loan has no repayment plan assigned");
     err.statusCode = 400;
     throw err;
   }
 
-  const totalInstallments = plan.numberOfMonths;
+  const totalInstallments = loan.repaymentPlanId.numberOfMonths;
+  if (!totalInstallments || totalInstallments <= 0) {
+    const err = new Error("Invalid numberOfMonths on repayment plan");
+    err.statusCode = 400;
+    throw err;
+  }
 
-  // Base date for 1st installment
-  const baseDate = loan.disbursedAt ? new Date(loan.disbursedAt) : new Date();
-
-  const totalPrincipal = Number(loan.requestedAmount || 0);
-  const totalRepayable = Number(loan.totalRepayable || 0);
-  const totalPenalties = Number(loan.penaltyFees || 0);
-
-  // Total interest = everything above (principal + penalties)
-  const totalInterest = Math.max(
-    totalRepayable - totalPrincipal - totalPenalties,
-    0
+  console.log(
+    "[generateScheduleForLoan] Generating schedule for loan:",
+    loanId,
+    "installments:",
+    totalInstallments
   );
 
-  // Split principal & interest across installments
-  const principalPerInstallmentRaw = totalPrincipal / totalInstallments;
-  const interestPerInstallmentRaw = totalInterest / totalInstallments;
+  // If you ever regenerate schedule, clean old ones
+  await LoanRepayment.deleteMany({ loanId });
+
+  const baseDate = loan.disbursedAt || new Date();
+
+  const principalTotal = Number(loan.requestedAmount || 0);
+  const penaltyTotal = Number(loan.penaltyFees || 0);
+  const totalRepayable = Number(loan.totalRepayable || 0);
+
+  const interestTotal = totalRepayable - principalTotal - penaltyTotal;
+
+  const principalPerInstallment = principalTotal / totalInstallments;
+  const interestPerInstallment = interestTotal / totalInstallments;
 
   const docs = [];
-  let principalAccum = 0;
-  let interestAccum = 0;
 
   for (let i = 1; i <= totalInstallments; i++) {
-    // Equal-ish split, adjust last installment for rounding
-    let principalAmount =
-      i < totalInstallments
-        ? Number(principalPerInstallmentRaw.toFixed(2))
-        : Number((totalPrincipal - principalAccum).toFixed(2));
-
-    let interestAmount =
-      i < totalInstallments
-        ? Number(interestPerInstallmentRaw.toFixed(2))
-        : Number((totalInterest - interestAccum).toFixed(2));
-
-    principalAccum += principalAmount;
-    interestAccum += interestAmount;
-
     const dueDate = new Date(baseDate);
-    // month by month: 1st = base, 2nd = +1 month, etc.
     dueDate.setMonth(dueDate.getMonth() + (i - 1));
 
+    const principalAmount = principalPerInstallment;
+    const interestAmount = interestPerInstallment;
     const lateFeeAmount = 0;
     const totalAmount = principalAmount + interestAmount + lateFeeAmount;
 
     docs.push({
-      loanId: loan._id,
+      loanId,
       installmentNumber: i,
       totalInstallments,
       dueDate,
@@ -101,10 +94,15 @@ export async function generateScheduleForLoan(loanId) {
     });
   }
 
-  // Optional: clear old schedule if regenerating
-  await LoanRepayment.deleteMany({ loanId: loan._id });
-
   const repayments = await LoanRepayment.insertMany(docs);
+
+  console.log(
+    "[generateScheduleForLoan] Created",
+    repayments.length,
+    "repayments for loan",
+    loanId
+  );
+
   return repayments;
 }
 

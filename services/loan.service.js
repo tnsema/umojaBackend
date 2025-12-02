@@ -7,7 +7,11 @@ import {
   getMemberLoanInterestRate,
   getDefaultPenaltyFee,
 } from "./settings.service.js";
-import { generateScheduleForLoan } from "./loanRepayment.service.js";
+import {
+  generateScheduleForLoan,
+  createInvoiceForRepayment,
+} from "./loanRepayment.service.js";
+//import { generateScheduleForLoan } from "./loanRepayment.service.js";
 
 const {
   loan: Loan,
@@ -481,14 +485,14 @@ export async function borrowerConfirmLoan(loanId, borrowerId, { confirm }) {
  *  - set disbursedAt
  *  - auto-generate repayment schedule based on plan + loan amounts
  */
-export async function disburseLoan(loanId) {
+/*export async function disburseLoan(loanId) {
   if (!isValidObjectId(loanId)) {
     const err = new Error("Invalid loan ID");
     err.statusCode = 400;
     throw err;
   }
 
-  const loan = await Loan.findById(loanId);
+  const loan = await Loan.findById(loanId).populate("repaymentPlanId");
   if (!loan) {
     const err = new Error("Loan not found");
     err.statusCode = 404;
@@ -501,24 +505,72 @@ export async function disburseLoan(loanId) {
     throw err;
   }
 
-  // TODO: integrate with wallet / payments system
-
+  // Mark as active + set disbursed date
   loan.status = "ACTIVE";
-  loan.disbursedAt = loan.disbursedAt || new Date();
-
+  loan.disbursedAt = new Date();
   await loan.save();
 
-  // 🔥 Auto-generate repayment schedule based on this loan
-  try {
-    await generateScheduleForLoan(loan._id);
-  } catch (scheduleErr) {
-    console.error(
-      "Failed to generate repayment schedule for loan:",
-      loan._id,
-      scheduleErr
-    );
-    // You can decide to throw here if schedule generation is critical
-    // throw scheduleErr;
+  console.log(
+    "[disburseLoan] Loan",
+    loanId,
+    "set to ACTIVE, generating schedule"
+  );
+
+  // 🔥 Auto-generate the repayment schedule
+  await generateScheduleForLoan(loan._id);
+
+  return loan;
+}*/
+
+export async function disburseLoan(loanId) {
+  if (!isValidObjectId(loanId)) {
+    const err = new Error("Invalid loan ID");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const loan = await Loan.findById(loanId).populate("repaymentPlanId");
+  if (!loan) {
+    const err = new Error("Loan not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (loan.status !== "APPROVED_FOR_DISBURSEMENT") {
+    const err = new Error("Loan is not approved for disbursement");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 1) Mark as ACTIVE and save
+  loan.status = "ACTIVE";
+  loan.disbursedAt = new Date();
+  await loan.save();
+
+  // 2) Generate repayment schedule (returns array of LoanRepayment docs)
+  const repayments = await generateScheduleForLoan(loan);
+
+  // 3) Auto-create an invoice for EACH repayment
+  if (Array.isArray(repayments) && repayments.length > 0) {
+    const loanRef = loan.loanRef || String(loan._id);
+
+    try {
+      await Promise.all(
+        repayments.map((repayment) =>
+          createInvoiceForRepayment({
+            repaymentId: repayment._id,
+            userId: loan.borrowerId,
+            loanRef,
+          })
+        )
+      );
+      console.log(
+        `[AUTO-INVOICE] Created ${repayments.length} invoices for loan ${loan._id}`
+      );
+    } catch (err) {
+      console.error("[AUTO-INVOICE ERROR]", err);
+      // we don't throw here, to avoid failing disbursement just because invoices failed
+    }
   }
 
   return loan;

@@ -71,7 +71,6 @@ import {
 import {
   createInvoiceController,
   getInvoiceController,
-  getMyInvoicesController,
   getInvoicePdfController,
 } from "../controllers/invoice.controller.js";
 import {
@@ -831,27 +830,13 @@ router.delete("/users/me/contacts/:contactId", jwtVerify, removeContact);
 // =======================
 // Invoices
 // =====================
-// Create generic invoice (for logged-in user)
-// POST /api/invoices
-router.post("/invoices", upload.none(), jwtVerify, createInvoiceController);
+router.post("/invoices", jwtVerify, upload.none(), createInvoiceController);
 
-// Logged-in user's invoices
-// GET /api/invoices/me
-router.get("/invoices/me", upload.none(), jwtVerify, getMyInvoicesController);
-
-// Get single invoice
-// GET /api/invoices/:id
-router.get("/invoices/:id", upload.none(), jwtVerify, getInvoiceController);
+// Get invoice JSON
+router.get("/invoices/:id", jwtVerify, getInvoiceController);
 
 // Get invoice PDF
-// GET /api/invoices/:id/pdf
-router.get(
-  "/invoices/:id/pdf",
-  upload.none(),
-  jwtVerify,
-  getInvoicePdfController
-);
-
+router.get("/invoices/:id/pdf", jwtVerify, getInvoicePdfController);
 // =======================
 // Loan Repayments
 // =======================
@@ -891,3 +876,5 @@ router.post(
   jwtVerify,
   markRepaymentLateAndGenerateInvoiceController
 );
+
+export default router;

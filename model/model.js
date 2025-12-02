@@ -28,8 +28,8 @@ import userContact from "../schema/UserContact.js";
 import loanCollateral from "../schema/LoanCollateral.js";
 import repaymentPlan from "../schema/RepaymentPlan.js";
 import loanReference from "../schema/LoanReference.js";
-import Invoice from "../schema/Invoice.js";
-import LoanRepayment from "../schema/LoanRepayment.js";
+import invoice from "../schema/Invoice.js";
+import loanRepayment from "../schema/LoanRepayment.js";
 
 const Models = {
   user, // base user accounts (multi-role via Role collection)
@@ -65,8 +65,8 @@ const Models = {
   loanCollateral,
   repaymentPlan,
   loanReference,
-  Invoice,
-  LoanRepayment,
+  invoice,
+  loanRepayment,
 };
 
 export default Models;

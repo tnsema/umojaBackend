@@ -239,14 +239,31 @@ export async function deleteLoanController(req, res) {
 export async function adminReviewLoanController(req, res) {
   try {
     const { id } = req.params;
-    const { approve, adminComment } = req.body ?? {};
 
-    if (typeof approve !== "boolean") {
+    // 🔍 See what the backend actually receives
+    console.log("adminReviewLoanController req.body:", req.body);
+
+    const body = req.body ?? {};
+
+    const rawApprove = body.approve;
+    const adminComment = body.adminComment ?? undefined;
+
+    // If approve is not sent at all
+    if (rawApprove === undefined || rawApprove === null) {
       return res.status(400).json({
         status: false,
-        message: "Field 'approve' (boolean) is required",
+        message: "Field 'approve' is required",
       });
     }
+
+    // ✅ Coerce to boolean so it works with JSON, form-data, etc.
+    const approve =
+      rawApprove === true ||
+      rawApprove === "true" ||
+      rawApprove === 1 ||
+      rawApprove === "1" ||
+      rawApprove === "on" ||
+      rawApprove === "yes";
 
     const loan = await adminReviewLoan(id, { approve, adminComment });
 
