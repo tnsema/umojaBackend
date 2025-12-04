@@ -1,10 +1,11 @@
+// models/capital.model.js
 import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
-const contributionSchema = new Schema(
+const capitalSchema = new Schema(
   {
-    // Member (User) who made this contribution
+    // Member (User) who made this capital payment
     memberId: {
       type: Schema.Types.ObjectId,
       ref: "User",
@@ -13,16 +14,20 @@ const contributionSchema = new Schema(
     },
 
     // Year of this capital (e.g. 2025)
-    // This supports dividend calculations per year
     year: {
       type: Number,
       required: true,
     },
 
-    // Amount contributed for this month (in smallest unit, e.g. cents)
     amount: {
       type: Number,
       required: true,
+    },
+
+    reference: {
+      type: String,
+      required: true,
+      unique: true,
     },
 
     // PENDING: created but not verified
@@ -38,7 +43,7 @@ const contributionSchema = new Schema(
   }
 );
 
-// Prevent duplicate contributions for the same member-month-year
-contributionSchema.index({ memberId: 1, year: 1 }, { unique: true });
+// one capital record per member per year
+capitalSchema.index({ memberId: 1, year: 1 }, { unique: true });
 
-export default model("Contribution", contributionSchema);
+export default model("Capital", capitalSchema);

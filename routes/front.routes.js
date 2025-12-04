@@ -95,6 +95,19 @@ import {
   createInvoiceForRepaymentController,
   markRepaymentLateAndGenerateInvoiceController,
 } from "../controllers/loanRepayment.controller.js";
+import {
+  getMyCapitalForYearController,
+  getAllCapitalsController,
+  createCapitalController,
+  updateCapitalStatusController,
+  markCapitalPaidController,
+  deleteCapitalController,
+  isMyCurrentYearCapitalPaidController,
+  cronGenerateAnnualCapitalController,
+  getCapitalByIdController,
+  getMyCurrentYearCapitalController,
+  ensureMyCapitalForCurrentYearController,
+} from "../controllers/capital.controller.js";
 
 const router = express.Router();
 
@@ -953,4 +966,66 @@ router.post(
   markRepaymentLateAndGenerateInvoiceController
 );
 
+// =======================
+// Capital
+// =======================
+// MEMBER: GET my capital for a given year
+router.get("/capital/me", jwtVerify, getMyCapitalForYearController);
+
+// MEMBER: is my current year capital paid?
+router.get(
+  "/capital/me/is-current-year-paid",
+  jwtVerify,
+  isMyCurrentYearCapitalPaidController
+);
+
+// ADMIN: list capitals
+router.get("/admin/capital", jwtVerify, getAllCapitalsController);
+
+// ADMIN: create capital manually
+router.post(
+  "/admin/capital",
+  upload.none(),
+  jwtVerify,
+  createCapitalController
+);
+
+// ADMIN: update status
+router.patch(
+  "/admin/capital/:id/status",
+  upload.none(),
+  jwtVerify,
+  updateCapitalStatusController
+);
+
+// ADMIN: mark as PAID
+router.post(
+  "/admin/capital/:id/mark-paid",
+  upload.none(),
+  jwtVerify,
+  markCapitalPaidController
+);
+
+// ADMIN: delete capital
+router.delete("/admin/capital/:id", jwtVerify, deleteCapitalController);
+
+// CRON/ADMIN: generate capital records for year
+router.post(
+  "/admin/capital/cron/generate-year",
+  upload.none(),
+  cronGenerateAnnualCapitalController
+);
+
+router.get("/capital/:id", jwtVerify, getCapitalByIdController);
+router.get(
+  "/capital/me/current-year",
+  jwtVerify,
+  getMyCurrentYearCapitalController
+);
+
+router.post(
+  "/capital/me/ensure",
+  jwtVerify,
+  ensureMyCapitalForCurrentYearController
+);
 export default router;
