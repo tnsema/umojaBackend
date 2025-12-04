@@ -1,362 +1,522 @@
 // controllers/contribution.controller.js
 
 import {
-  createContributionService,
-  markContributionPaidService,
-  listMemberContributionsService,
-  getContributionsByYearService,
-  getContributionsByMonthService,
-  getContributionsByYearByMemberService,
+  createContribution as createContributionService,
+  getUserContributionsByYear,
+  getUserContributionByYearMonth,
+  getAllContributionsForUser,
+  getAllContributions,
+  deleteContribution as deleteContributionService,
+  updateContributionStatus,
+  markContributionPaid,
+  getUserPaidTotalForYear,
+  calculateYearEndPayouts,
+  ensureYearlyContributionsForMember,
+  getContributionById,
 } from "../services/contribution.service.js";
 
 /**
  * POST /contributions
- * Body (form-data):
- *  - memberId (optional; if missing, use logged-in userId)
- *  - month
- *  - year
- *  - amount
- *  - method? ("WALLET" | "POP")
- *  - walletTxId? (optional, if already paid via wallet)
- *
- * Auth: jwtVerify (member) or ADMIN (depending on route-level protection)
+ * Logged-in member creates a contribution.
+ * Body: { amount, month, year }
+ * Admin can optionally pass memberId in body to create for someone else.
  */
-export async function createContribution(req, res) {
+export async function createContributionController(req, res) {
   try {
-    let { memberId, month, year, amount, method, walletTxId } = req.body || {};
-
-    // If memberId is not provided, assume current logged-in user
-    if (!memberId && req.payload?.userId) {
-      memberId = req.payload.userId;
+    const authUserId = req.payload?.userId;
+    if (!authUserId) {
+      return res.status(401).json({
+        status: false,
+        message: "User is not authenticated",
+      });
     }
 
-    const contrib = await createContributionService({
-      memberId,
+    const { amount, month, year, memberId } = req.body;
+
+    const contribution = await createContributionService({
+      memberId: memberId || authUserId,
+      amount,
       month,
       year,
-      amount,
-      method,
-      walletTxId,
     });
 
     return res.status(201).json({
       status: true,
       message: "Contribution created successfully",
-      data: contrib,
+      data: { contribution },
     });
   } catch (err) {
-    console.error("Error in createContribution:", err);
+    console.error("createContributionController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while creating contribution.";
 
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "memberId, month, year and amount are required",
-      });
-    }
-
-    if (err.code === "INVALID_MEMBER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid memberId",
-      });
-    }
-
-    if (err.code === "MEMBER_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Member not found",
-      });
-    }
-
-    if (err.code === "INVALID_PERIOD") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid month or year",
-      });
-    }
-
-    if (err.code === "INVALID_AMOUNT") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid contribution amount",
-      });
-    }
-
-    if (err.code === "INVALID_METHOD") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid contribution method",
-      });
-    }
-
-    if (err.code === "INVALID_WALLET_TX_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid wallet transaction id",
-      });
-    }
-
-    if (err.code === "WALLET_TX_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Wallet transaction not found",
-      });
-    }
-
-    if (err.code === "DUPLICATE_CONTRIBUTION") {
-      return res.status(409).json({
-        status: false,
-        message: "Contribution for this member, month and year already exists",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while creating contribution",
+      message,
     });
   }
 }
 
 /**
- * POST /contributions/:id/mark-paid
- * Body (form-data):
- *  - walletTxId? (optional)
- *
- * Auth: jwtVerify + requireRole("ADMIN") (recommended)
+ * GET /contributions/me/year/:year
+ * Get contributions for logged-in user for a given year
  */
-export async function markContributionPaid(req, res) {
+export async function getMyContributionsByYearController(req, res) {
   try {
-    const { id } = req.params;
-    const { walletTxId } = req.body || {};
+    const memberId = req.payload?.userId;
+    if (!memberId) {
+      return res.status(401).json({
+        status: false,
+        message: "User is not authenticated",
+      });
+    }
 
-    const contrib = await markContributionPaidService({
-      contributionId: id,
-      walletTxId,
-    });
+    const { year } = req.params;
+    const result = await getUserContributionsByYear({ memberId, year });
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      message: "Contribution marked as PAID",
-      data: contrib,
+      message: "Contributions fetched successfully",
+      data: result,
     });
   } catch (err) {
-    console.error("Error in markContributionPaid:", err);
+    console.error("getMyContributionsByYearController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching contributions for the year.";
 
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "contributionId is required",
-      });
-    }
-
-    if (err.code === "INVALID_CONTRIBUTION_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid contribution id",
-      });
-    }
-
-    if (err.code === "CONTRIBUTION_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Contribution not found",
-      });
-    }
-
-    if (err.code === "INVALID_WALLET_TX_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid wallet transaction id",
-      });
-    }
-
-    if (err.code === "WALLET_TX_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Wallet transaction not found",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while marking contribution PAID",
+      message,
+    });
+  }
+}
+
+/**
+ * GET /contributions/me/year/:year/month/:month
+ * Single month contribution for logged-in user
+ */
+export async function getMyContributionByYearMonthController(req, res) {
+  try {
+    const memberId = req.payload?.userId;
+    if (!memberId) {
+      return res.status(401).json({
+        status: false,
+        message: "User is not authenticated",
+      });
+    }
+
+    const { year, month } = req.params;
+    const contribution = await getUserContributionByYearMonth({
+      memberId,
+      year,
+      month,
+    });
+
+    return res.json({
+      status: true,
+      message: "Contribution fetched successfully",
+      data: { contribution },
+    });
+  } catch (err) {
+    console.error("getMyContributionByYearMonthController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching the contribution.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
     });
   }
 }
 
 /**
  * GET /contributions/me
- * Auth: jwtVerify
- * Returns contributions of the logged-in member
+ * All contributions for logged-in user (optional query: year, status)
  */
-export async function listMyContributions(req, res) {
+export async function getMyAllContributionsController(req, res) {
   try {
     const memberId = req.payload?.userId;
     if (!memberId) {
       return res.status(401).json({
         status: false,
-        message: "Unauthorized: missing user",
+        message: "User is not authenticated",
       });
     }
 
-    const list = await listMemberContributionsService(memberId);
+    const { year, status } = req.query;
+    const items = await getAllContributionsForUser({
+      memberId,
+      year,
+      status,
+    });
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      data: list,
+      message: "Contributions fetched successfully",
+      data: items,
     });
   } catch (err) {
-    console.error("Error in listMyContributions:", err);
+    console.error("getMyAllContributionsController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching contributions.";
 
-    if (err.code === "INVALID_MEMBER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid memberId",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while fetching contributions",
+      message,
     });
   }
 }
 
 /**
- * GET /contributions/member/:memberId
- * Auth: jwtVerify + (ADMIN or same member, enforced at route-level if you want)
+ * ADMIN: GET /admin/users/:userId/contributions
+ * Optional query: year, status
  */
-export async function listMemberContributions(req, res) {
+export async function getUserContributionsAdminController(req, res) {
   try {
-    const { memberId } = req.params;
+    const { userId } = req.params;
+    const { year, status } = req.query;
 
-    const list = await listMemberContributionsService(memberId);
+    const items = await getAllContributionsForUser({
+      memberId: userId,
+      year,
+      status,
+    });
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      data: list,
+      message: "User contributions fetched successfully",
+      data: items,
     });
   } catch (err) {
-    console.error("Error in listMemberContributions:", err);
+    console.error("getUserContributionsAdminController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching user contributions.";
 
-    if (err.code === "INVALID_MEMBER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid memberId",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while fetching member contributions",
+      message,
     });
   }
 }
 
 /**
- * GET /contributions/year/:year
- * Auth: jwtVerify + requireRole("ADMIN")
+ * ADMIN: GET /admin/contributions
+ * Query: page, limit, memberId, year, status
  */
-export async function getContributionsByYear(req, res) {
+export async function getAllContributionsAdminController(req, res) {
+  try {
+    const { page, limit, memberId, year, status } = req.query;
+
+    const result = await getAllContributions({
+      page,
+      limit,
+      memberId,
+      year,
+      status,
+    });
+
+    return res.json({
+      status: true,
+      message: "All contributions fetched successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("getAllContributionsAdminController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching all contributions.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: DELETE /admin/contributions/:id
+ */
+export async function deleteContributionController(req, res) {
+  try {
+    const { id } = req.params;
+
+    const result = await deleteContributionService(id);
+
+    return res.json({
+      status: true,
+      message: "Contribution deleted successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("deleteContributionController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while deleting the contribution.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: PATCH /admin/contributions/:id/status
+ * Body: { status: "PENDING" | "PAID" }
+ */
+export async function updateContributionStatusController(req, res) {
+  try {
+    const { id } = req.params;
+    const { status } = req.body ?? {};
+
+    if (!status) {
+      return res.status(400).json({
+        status: false,
+        message: "Field 'status' is required",
+      });
+    }
+
+    const contribution = await updateContributionStatus(id, status);
+
+    return res.json({
+      status: true,
+      message: "Contribution status updated successfully",
+      data: { contribution },
+    });
+  } catch (err) {
+    console.error("updateContributionStatusController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while updating contribution status.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: POST /admin/contributions/:id/mark-paid
+ */
+export async function markContributionPaidController(req, res) {
+  try {
+    const { id } = req.params;
+
+    const contribution = await markContributionPaid(id);
+
+    return res.json({
+      status: true,
+      message: "Contribution marked as PAID",
+      data: { contribution },
+    });
+  } catch (err) {
+    console.error("markContributionPaidController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while marking contribution as paid.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * GET /contributions/me/summary/:year
+ * Total PAID contributions for logged-in user in a year
+ */
+export async function getMyPaidTotalForYearController(req, res) {
+  try {
+    const memberId = req.payload?.userId;
+    if (!memberId) {
+      return res.status(401).json({
+        status: false,
+        message: "User is not authenticated",
+      });
+    }
+
+    const { year } = req.params;
+    const summary = await getUserPaidTotalForYear({ memberId, year });
+
+    return res.json({
+      status: true,
+      message: "Paid total calculated successfully",
+      data: summary,
+    });
+  } catch (err) {
+    console.error("getMyPaidTotalForYearController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while calculating total paid.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: GET /admin/users/:userId/contributions/summary/:year
+ */
+export async function getUserPaidTotalForYearAdminController(req, res) {
+  try {
+    const { userId, year } = req.params;
+    const summary = await getUserPaidTotalForYear({
+      memberId: userId,
+      year,
+    });
+
+    return res.json({
+      status: true,
+      message: "User paid total calculated successfully",
+      data: summary,
+    });
+  } catch (err) {
+    console.error("getUserPaidTotalForYearAdminController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while calculating user total paid.";
+
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * ADMIN: GET /admin/contributions/payouts/:year
+ * Skeleton for year-end payout calculation
+ */
+export async function calculateYearEndPayoutsController(req, res) {
   try {
     const { year } = req.params;
 
-    const list = await getContributionsByYearService(year);
+    const payouts = await calculateYearEndPayouts(year);
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      data: list,
+      message: "Year-end payout skeleton calculated successfully",
+      data: payouts,
     });
   } catch (err) {
-    console.error("Error in getContributionsByYear:", err);
+    console.error("calculateYearEndPayoutsController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while calculating year-end payouts.";
 
-    if (err.code === "INVALID_YEAR") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid year",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while fetching contributions by year",
+      message,
     });
   }
 }
 
-/**
- * GET /contributions/month/:month
- * Auth: jwtVerify + requireRole("ADMIN")
- */
-export async function getContributionsByMonth(req, res) {
+export async function ensureMyYearlyContributionsController(req, res) {
   try {
-    const { month } = req.params;
+    const memberId = req.payload?.userId;
 
-    const list = await getContributionsByMonthService(month);
-
-    return res.status(200).json({
-      status: true,
-      data: list,
-    });
-  } catch (err) {
-    console.error("Error in getContributionsByMonth:", err);
-
-    if (err.code === "INVALID_MONTH") {
-      return res.status(400).json({
+    if (!memberId) {
+      return res.status(401).json({
         status: false,
-        message: "Invalid month",
+        message: "User is not authenticated",
       });
     }
 
-    return res.status(500).json({
+    // year can come from body or query; default to current year
+    const yearFromBody = req.body?.year;
+    const yearFromQuery = req.query?.year;
+    const year = yearFromBody || yearFromQuery || new Date().getFullYear();
+
+    const result = await ensureYearlyContributionsForMember({
+      memberId,
+      year,
+      // optional overrides if you ever want them from body:
+      // amountPerMonth: req.body?.amountPerMonth,
+      // startMonth: req.body?.startMonth,
+      // endMonth: req.body?.endMonth,
+    });
+
+    return res.status(201).json({
+      status: true,
+      message: `Yearly contributions ensured for year ${result.year}`,
+      data: result,
+    });
+  } catch (err) {
+    console.error("ensureMyYearlyContributionsController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while ensuring yearly contributions.";
+
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while fetching contributions by month",
+      message,
     });
   }
 }
 
-/**
- * GET /contributions/member/:memberId/year/:year
- * Auth: jwtVerify + requireRole("ADMIN") (or same user)
- */
-export async function getContributionsByYearByMember(req, res) {
+export async function getMyContributionByIdController(req, res) {
   try {
-    const { memberId, year } = req.params;
+    const memberId = req.payload?.userId;
+    const { id } = req.params;
 
-    const list = await getContributionsByYearByMemberService(memberId, year);
+    const contribution = await getContributionById(id, { memberId });
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      data: list,
+      message: "Contribution fetched successfully",
+      data: contribution,
     });
   } catch (err) {
-    console.error("Error in getContributionsByYearByMember:", err);
+    console.error("getMyContributionByIdController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching the contribution.";
 
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "memberId and year are required",
-      });
-    }
+    return res.status(statusCode).json({ status: false, message });
+  }
+}
 
-    if (err.code === "INVALID_MEMBER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid memberId",
-      });
-    }
+export async function getContributionByIdAdminController(req, res) {
+  try {
+    const { id } = req.params;
 
-    if (err.code === "INVALID_YEAR") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid year",
-      });
-    }
+    const contribution = await getContributionById(id, { forAdmin: true });
 
-    return res.status(500).json({
-      status: false,
-      message:
-        "Server error while fetching contributions by year for this member",
+    return res.json({
+      status: true,
+      message: "Contribution fetched successfully",
+      data: contribution,
     });
+  } catch (err) {
+    console.error("getContributionByIdAdminController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while fetching the contribution.";
+
+    return res.status(statusCode).json({ status: false, message });
   }
 }

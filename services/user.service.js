@@ -8,6 +8,8 @@ import { createWalletForUserService } from "../services/wallet.service.js";
 
 const { user: User, role: Role, wallet: Wallet } = Models;
 
+const MEMBER_ROLE_ID = "69162e65f0d00f0f2241aa5a";
+
 export async function registerClientService(payload) {
   const { phone, email, password, firstName, lastName } = payload || {};
 
@@ -265,4 +267,15 @@ export async function listAllUsersService() {
     .lean();
 
   return users;
+}
+
+export async function getAllMemberUsers() {
+  const memberRoleObjectId = new mongoose.Types.ObjectId(MEMBER_ROLE_ID);
+
+  const members = await User.find({
+    roles: memberRoleObjectId,
+    // optional: filter out deleted/blocked users later if you add those statuses
+  }).select("firstName lastName phone email roles status");
+
+  return members;
 }

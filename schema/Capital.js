@@ -12,16 +12,7 @@ const contributionSchema = new Schema(
       index: true,
     },
 
-    // Month number (1–12)
-    // Allows easier filtering, grouping, and indexing
-    month: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 12,
-    },
-
-    // Year of this contribution (e.g. 2025)
+    // Year of this capital (e.g. 2025)
     // This supports dividend calculations per year
     year: {
       type: Number,
@@ -32,12 +23,6 @@ const contributionSchema = new Schema(
     amount: {
       type: Number,
       required: true,
-    },
-
-    reference: {
-      type: String,
-      required: true,
-      unique: true,
     },
 
     // PENDING: created but not verified
@@ -54,6 +39,6 @@ const contributionSchema = new Schema(
 );
 
 // Prevent duplicate contributions for the same member-month-year
-contributionSchema.index({ memberId: 1, month: 1, year: 1 }, { unique: true });
+contributionSchema.index({ memberId: 1, year: 1 }, { unique: true });
 
 export default model("Contribution", contributionSchema);

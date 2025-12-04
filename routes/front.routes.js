@@ -11,7 +11,23 @@ import {
 import * as walletCtrl from "../controllers/wallet.controller.js";
 import * as notifCtrl from "../controllers/notification.controller.js";
 import * as roleCtrl from "../controllers/role.controller.js";
-import * as contribCtrl from "../controllers/contribution.controller.js";
+import {
+  createContributionController,
+  getMyContributionsByYearController,
+  getMyContributionByYearMonthController,
+  getMyAllContributionsController,
+  getUserContributionsAdminController,
+  getAllContributionsAdminController,
+  deleteContributionController,
+  updateContributionStatusController,
+  markContributionPaidController,
+  getMyPaidTotalForYearController,
+  getUserPaidTotalForYearAdminController,
+  calculateYearEndPayoutsController,
+  ensureMyYearlyContributionsController,
+  getMyContributionByIdController, // 👈 add
+  getContributionByIdAdminController,
+} from "../controllers/contribution.controller.js";
 import * as kycCtrl from "../controllers/kyc.controller.js";
 import {
   createLoanController,
@@ -280,57 +296,117 @@ router.post(
 // Contributions
 // =========================
 
-// Member: create own contribution
+// Member: create contribution
+// POST /api/contributions
 router.post(
   "/contributions",
   upload.none(),
   jwtVerify,
-  contribCtrl.createContribution
+  createContributionController
 );
 
-// Member: see own contributions
-router.get("/contributions/me", jwtVerify, contribCtrl.listMyContributions);
-
-// Admin: see contributions by member
+// Member: contributions for a given year
+// GET /api/contributions/me/year/:year
 router.get(
-  "/contributions/member/:memberId",
+  "/contributions/me/year/:year",
   jwtVerify,
-  requireRole("ADMIN"),
-  contribCtrl.listMemberContributions
+  getMyContributionsByYearController
 );
 
-// Admin: mark contribution PAID
-router.post(
-  "/contributions/:id/mark-paid",
+// Member: single month contribution for a given year
+// GET /api/contributions/me/year/:year/month/:month
+router.get(
+  "/contributions/me/year/:year/month/:month",
+  jwtVerify,
+  getMyContributionByYearMonthController
+);
+
+// Member: all contributions (optional filter: year, status)
+// GET /api/contributions/me
+router.get("/contributions/me", jwtVerify, getMyAllContributionsController);
+
+// Member: total PAID contributions for a year
+// GET /api/contributions/me/summary/:year
+router.get(
+  "/contributions/me/summary/:year",
+  jwtVerify,
+  getMyPaidTotalForYearController
+);
+
+// ADMIN: contributions of a specific user
+// GET /api/admin/users/:userId/contributions
+router.get(
+  "/admin/users/:userId/contributions",
+  jwtVerify,
+  getUserContributionsAdminController
+);
+
+// ADMIN: total PAID for specific user/year
+// GET /api/admin/users/:userId/contributions/summary/:year
+router.get(
+  "/admin/users/:userId/contributions/summary/:year",
+  jwtVerify,
+  getUserPaidTotalForYearAdminController
+);
+
+// ADMIN: all contributions (filters via query)
+// GET /api/admin/contributions
+router.get(
+  "/admin/contributions",
+  jwtVerify,
+  getAllContributionsAdminController
+);
+
+// ADMIN: delete contribution
+// DELETE /api/admin/contributions/:id
+router.delete(
+  "/admin/contributions/:id",
+  jwtVerify,
+  deleteContributionController
+);
+
+// ADMIN: update status
+// PATCH /api/admin/contributions/:id/status
+router.patch(
+  "/admin/contributions/:id/status",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN"),
-  contribCtrl.markContributionPaid
+  updateContributionStatusController
 );
 
-// Admin: by year
-router.get(
-  "/contributions/year/:year",
+// ADMIN: mark as PAID
+// POST /api/admin/contributions/:id/mark-paid
+router.post(
+  "/admin/contributions/:id/mark-paid",
+  upload.none(),
   jwtVerify,
-  requireRole("ADMIN"),
-  contribCtrl.getContributionsByYear
+  markContributionPaidController
 );
 
-// Admin: by month
+// ADMIN: year-end payouts skeleton
+// GET /api/admin/contributions/payouts/:year
 router.get(
-  "/contributions/month/:month",
+  "/admin/contributions/payouts/:year",
   jwtVerify,
-  requireRole("ADMIN"),
-  contribCtrl.getContributionsByMonth
+  calculateYearEndPayoutsController
 );
 
-// Admin: by year & member
-router.get(
-  "/contributions/member/:memberId/year/:year",
+router.post(
+  "/member/contributions/ensure-year",
+  upload.none(),
   jwtVerify,
-  requireRole("ADMIN"),
-  contribCtrl.getContributionsByYearByMember
+  ensureMyYearlyContributionsController
 );
+
+router.get("/contributions/:id", jwtVerify, getMyContributionByIdController);
+
+router.get(
+  "/admin/contributions/:id",
+  jwtVerify,
+  getContributionByIdAdminController
+);
+
+// ==================== END CONTRIBUTIONS ====================
 
 // =========================
 // KYC

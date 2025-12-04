@@ -9,7 +9,8 @@
     "production": "cross-env NODE_ENV=production node server.js",
     "start": "npm run development",
     "seed:roles": "cross-env NODE_ENV=development node seed/seedRoles.js",
-    "seed:repayment-plans": "cross-env NODE_ENV=development node seed/seedRepaymentPlans.js"
+    "seed:repayment-plans": "cross-env NODE_ENV=development node seed/seedRepaymentPlans.js",
+    "seed:user": "cross-env NODE_ENV=development node seed/seedUser.js"
   },
   "repository": {
     "type": "git",
