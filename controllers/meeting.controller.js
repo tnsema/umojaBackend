@@ -1,252 +1,334 @@
 // controllers/meeting.controller.js
-
 import {
   createMeetingService,
-  updateMeetingService,
-  deleteMeetingService,
-  setMeetingDecisionSummaryService,
+  generateAttendanceListForMeeting,
+  getMeetingById,
+  getMeetingsByYear,
+  deleteMeeting,
+  updateMeetingStatus,
+  createAttendanceListForMeeting,
+  markMemberAttendance,
+  getMeetingsForMember,
+  getMeetingForMemberById,
 } from "../services/meeting.service.js";
 
 /**
- * POST /meetings
- * Body (form-data):
- *  - title
- *  - date         (ISO or yyyy-mm-dd)
- *  - time?        ("18:00–20:00")
- *  - agenda?
- *  - createdBy?   (optional; if not provided, use logged-in userId)
- *
- * Auth: jwtVerify + requireRole("ADMIN", "PROJECT_MANAGER") (recommended at route)
+ * POST /admin/meetings
+ * Body: { title, date, startTime?, endTime?, agenda?, description?, location?, decisionsSummary?, minutesLink? }
+ * chairId is taken from req.payload.userId
  */
-export async function createMeeting(req, res) {
+// POST /api/admin/meetings
+export async function createMeetingController(req, res) {
   try {
+    const chairId = req.payload?.userId; // admin creating the meeting
+    if (!chairId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
+
     const {
       title,
-      date,
-      time,
       agenda,
-      createdBy: bodyCreatedBy,
+      description,
+      date,
+      startTime,
+      endTime,
+      location,
+      year,
+      minutesLink,
     } = req.body || {};
 
-    const createdBy = bodyCreatedBy || req.payload?.userId;
+    if (!title || !date) {
+      return res.status(400).json({
+        status: false,
+        message: "Title and date are required",
+      });
+    }
 
+    // 1) Create the meeting
     const meeting = await createMeetingService({
+      chairId,
       title,
-      date,
-      time,
       agenda,
-      createdBy,
+      description,
+      date,
+      startTime,
+      endTime,
+      location,
+      year,
+      minutesLink,
     });
+
+    // 2) 🔥 Auto-generate attendance for ALL MEMBERS
+    const attendanceResult = await generateAttendanceListForMeeting(
+      meeting._id
+    );
 
     return res.status(201).json({
       status: true,
-      message: "Meeting created successfully",
-      data: meeting,
+      message: "Meeting created and attendance list generated",
+      data: {
+        meeting,
+        attendance: attendanceResult,
+      },
     });
   } catch (err) {
-    console.error("Error in createMeeting:", err);
+    console.error("createMeetingController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while creating the meeting.";
 
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "title, date and createdBy are required",
-      });
-    }
-
-    if (err.code === "INVALID_USER_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid createdBy userId",
-      });
-    }
-
-    if (err.code === "USER_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Creator user not found",
-      });
-    }
-
-    if (err.code === "INVALID_DATE") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid date",
-      });
-    }
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while creating meeting",
+      message,
     });
   }
 }
 
 /**
- * POST /meetings/:meetingId
- * Body (form-data):
- *  - title?
- *  - date?
- *  - time?
- *  - agenda?
- *
- * Auth: jwtVerify + requireRole("ADMIN", "PROJECT_MANAGER")
+ * GET /admin/meetings/:id
  */
-export async function updateMeeting(req, res) {
+export async function getMeetingByIdController(req, res) {
   try {
-    const { meetingId } = req.params;
-    const { title, date, time, agenda } = req.body || {};
+    const { id } = req.params;
 
-    const meeting = await updateMeetingService({
-      meetingId,
-      fields: { title, date, time, agenda },
-    });
+    const meeting = await getMeetingById(id);
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      message: "Meeting updated successfully",
-      data: meeting,
+      message: "Meeting fetched successfully",
+      data: { meeting },
     });
   } catch (err) {
-    console.error("Error in updateMeeting:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "meetingId is required",
-      });
-    }
-
-    if (err.code === "INVALID_MEETING_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid meetingId",
-      });
-    }
-
-    if (err.code === "NO_UPDATE_FIELDS") {
-      return res.status(400).json({
-        status: false,
-        message: "No fields to update",
-      });
-    }
-
-    if (err.code === "INVALID_DATE") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid date",
-      });
-    }
-
-    if (err.code === "MEETING_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Meeting not found",
-      });
-    }
-
-    return res.status(500).json({
+    console.error("getMeetingByIdController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while fetching meeting.";
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while updating meeting",
+      message,
     });
   }
 }
 
 /**
- * DELETE /meetings/:meetingId
- *
- * Auth: jwtVerify + requireRole("ADMIN", "PROJECT_MANAGER")
+ * GET /admin/meetings
+ * Optional query: ?year=2026
  */
-export async function deleteMeeting(req, res) {
+export async function getMeetingsByYearController(req, res) {
   try {
-    const { meetingId } = req.params;
+    const { year } = req.query;
 
-    const result = await deleteMeetingService({ meetingId });
+    const meetings = await getMeetingsByYear({ year });
 
-    return res.status(200).json({
+    return res.json({
+      status: true,
+      message: "Meetings fetched successfully",
+      data: { meetings },
+    });
+  } catch (err) {
+    console.error("getMeetingsByYearController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while fetching meetings.";
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * DELETE /admin/meetings/:id
+ */
+export async function deleteMeetingController(req, res) {
+  try {
+    const { id } = req.params;
+
+    const result = await deleteMeeting(id);
+
+    return res.json({
       status: true,
       message: "Meeting deleted successfully",
       data: result,
     });
   } catch (err) {
-    console.error("Error in deleteMeeting:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "meetingId is required",
-      });
-    }
-
-    if (err.code === "INVALID_MEETING_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid meetingId",
-      });
-    }
-
-    if (err.code === "MEETING_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Meeting not found",
-      });
-    }
-
-    return res.status(500).json({
+    console.error("deleteMeetingController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while deleting the meeting.";
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while deleting meeting",
+      message,
     });
   }
 }
 
 /**
- * POST /meetings/:meetingId/decision-summary
- * Body (form-data):
- *  - summary
- *
- * Auth: jwtVerify + requireRole("ADMIN", "PROJECT_MANAGER")
+ * PATCH /admin/meetings/:id/status
+ * Body: { status: "SCHEDULED" | "COMPLETED" | "CANCELLED" }
  */
-export async function setMeetingDecisionSummary(req, res) {
+export async function updateMeetingStatusController(req, res) {
   try {
-    const { meetingId } = req.params;
-    const { summary } = req.body || {};
+    const { id } = req.params;
+    const { status } = req.body ?? {};
 
-    const meeting = await setMeetingDecisionSummaryService({
-      meetingId,
-      summary,
+    if (!status) {
+      return res.status(400).json({
+        status: false,
+        message: "Field 'status' is required",
+      });
+    }
+
+    const meeting = await updateMeetingStatus(id, status);
+
+    return res.json({
+      status: true,
+      message: "Meeting status updated",
+      data: { meeting },
+    });
+  } catch (err) {
+    console.error("updateMeetingStatusController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while updating meeting status.";
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * POST /admin/meetings/:id/attendance/generate
+ * Creates attendance rows for all members for this meeting
+ */
+export async function createAttendanceListController(req, res) {
+  try {
+    const { id } = req.params;
+
+    const result = await createAttendanceListForMeeting(id);
+
+    return res.json({
+      status: true,
+      message: "Attendance list generated for meeting",
+      data: result,
+    });
+  } catch (err) {
+    console.error("createAttendanceListController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message ||
+      "An unexpected error occurred while generating attendance list.";
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * PATCH /admin/meetings/:id/attendance/mark-present
+ * Body: { memberId, attended? } (attended defaults to true)
+ */
+export async function markMemberPresentController(req, res) {
+  try {
+    const { id } = req.params;
+    const { memberId, attended } = req.body ?? {};
+
+    if (!memberId) {
+      return res.status(400).json({
+        status: false,
+        message: "Field 'memberId' is required",
+      });
+    }
+
+    const record = await markMemberAttendance({
+      meetingId: id,
+      memberId,
+      attended,
     });
 
-    return res.status(200).json({
+    return res.json({
       status: true,
-      message: "Meeting decision summary updated",
+      message: "Attendance updated for member",
+      data: { attendance: record },
+    });
+  } catch (err) {
+    console.error("markMemberPresentController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while updating attendance.";
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+export async function getMyMeetingsController(req, res) {
+  try {
+    const memberId = req.payload?.userId;
+    if (!memberId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const data = await getMeetingsForMember(memberId);
+
+    return res.json({
+      status: true,
+      message: "Meetings fetched successfully",
+      data,
+    });
+  } catch (err) {
+    console.error("getMyMeetingsController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while fetching meetings.";
+    return res.status(statusCode).json({
+      status: false,
+      message,
+    });
+  }
+}
+
+/**
+ * GET /meetings/:id
+ * Return full meeting info plus the member's attendance status.
+ */
+export async function getMeetingByIdForMemberController(req, res) {
+  try {
+    const memberId = req.payload?.userId;
+    if (!memberId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const { id } = req.params;
+
+    const meeting = await getMeetingForMemberById(id, memberId);
+
+    return res.json({
+      status: true,
+      message: "Meeting fetched successfully",
       data: meeting,
     });
   } catch (err) {
-    console.error("Error in setMeetingDecisionSummary:", err);
-
-    if (err.code === "FIELDS_REQUIRED") {
-      return res.status(400).json({
-        status: false,
-        message: "meetingId and summary are required",
-      });
-    }
-
-    if (err.code === "INVALID_MEETING_ID") {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid meetingId",
-      });
-    }
-
-    if (err.code === "MEETING_NOT_FOUND") {
-      return res.status(404).json({
-        status: false,
-        message: "Meeting not found",
-      });
-    }
-
-    return res.status(500).json({
+    console.error("getMeetingByIdForMemberController error:", err);
+    const statusCode = err.statusCode || 500;
+    const message =
+      err.message || "An unexpected error occurred while fetching meeting.";
+    return res.status(statusCode).json({
       status: false,
-      message: "Server error while updating decision summary",
+      message,
     });
   }
 }

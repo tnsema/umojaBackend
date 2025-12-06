@@ -43,7 +43,17 @@ import {
   cancelLoanByBorrowerController,
   cancelLoanByAdminController,
 } from "../controllers/loan.controller.js";
-import * as meetingCtrl from "../controllers/meeting.controller.js";
+import {
+  createMeetingController,
+  getMeetingByIdController,
+  getMeetingsByYearController,
+  deleteMeetingController,
+  updateMeetingStatusController,
+  createAttendanceListController,
+  markMemberPresentController,
+  getMyMeetingsController,
+  getMeetingByIdForMemberController,
+} from "../controllers/meeting.controller.js";
 import * as meetingAttCtrl from "../controllers/meetingAttendance.controller.js";
 import * as payoutCtrl from "../controllers/payout.controller.js";
 import * as depositCtrl from "../controllers/deposit.controller.js";
@@ -566,83 +576,60 @@ router.delete(
 // Meetings
 // =========================
 
-// Create meeting
+// ADMIN: create meeting
+// POST /api/admin/meetings
 router.post(
-  "/meetings",
+  "/admin/meetings",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN", "PROJECT_MANAGER"),
-  meetingCtrl.createMeeting
+  createMeetingController
 );
 
-// Update meeting
+// ADMIN: get meeting by id
+// GET /api/admin/meetings/:id
+router.get("/admin/meetings/:id", jwtVerify, getMeetingByIdController);
+
+// ADMIN: get meetings (optionally filter by year)
+// GET /api/admin/meetings?year=2026
+router.get("/admin/meetings", jwtVerify, getMeetingsByYearController);
+
+// ADMIN: delete meeting
+// DELETE /api/admin/meetings/:id
+router.delete("/admin/meetings/:id", jwtVerify, deleteMeetingController);
+
+// ADMIN: update meeting status
+// PATCH /api/admin/meetings/:id/status
+router.patch(
+  "/admin/meetings/:id/status",
+  upload.none(),
+  jwtVerify,
+  updateMeetingStatusController
+);
+
+// ADMIN: generate attendance list for meeting
+// POST /api/admin/meetings/:id/attendance/generate
 router.post(
-  "/meetings/:meetingId",
+  "/admin/meetings/:id/attendance/generate",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN", "PROJECT_MANAGER"),
-  meetingCtrl.updateMeeting
+  createAttendanceListController
 );
 
-// Delete meeting
-router.delete(
-  "/meetings/:meetingId",
+// ADMIN: mark a member present/absent
+// PATCH /api/admin/meetings/:id/attendance/mark-present
+router.patch(
+  "/admin/meetings/:id/attendance/mark-present",
   upload.none(),
   jwtVerify,
-  requireRole("ADMIN", "PROJECT_MANAGER"),
-  meetingCtrl.deleteMeeting
+  markMemberPresentController
 );
 
-// Set decision summary
-router.post(
-  "/meetings/:meetingId/decision-summary",
-  upload.none(),
-  jwtVerify,
-  requireRole("ADMIN", "PROJECT_MANAGER"),
-  meetingCtrl.setMeetingDecisionSummary
-);
-
-// Record attendance
-router.post(
-  "/meetings/:meetingId/attendance",
-  upload.none(),
-  jwtVerify,
-  requireRole("ADMIN", "PROJECT_MANAGER"),
-  meetingAttCtrl.recordAttendance
-);
-
-// List meeting attendance
+router.get("/meetings/me", upload.none(), jwtVerify, getMyMeetingsController);
 router.get(
-  "/meetings/:meetingId/attendance",
-  jwtVerify,
-  requireRole("ADMIN", "PROJECT_MANAGER"),
-  meetingAttCtrl.listMeetingAttendance
-);
-
-// Agent/Admin: create payout for a transfer
-router.post(
-  "/payouts",
+  "/meetings/:id",
   upload.none(),
   jwtVerify,
-  requireRole("PAYING_AGENT", "ADMIN"),
-  payoutCtrl.createPayout
-);
-
-// Agent/Admin: update payout status
-router.post(
-  "/payouts/:payoutId/status",
-  upload.none(),
-  jwtVerify,
-  requireRole("PAYING_AGENT", "ADMIN"),
-  payoutCtrl.updatePayoutStatus
-);
-
-// Anyone with ref (or protected by jwtVerify if you prefer)
-router.post(
-  "/payouts/verify",
-  upload.none(),
-  /* jwtVerify,  // optional */
-  payoutCtrl.verifyPayout
+  getMeetingByIdForMemberController
 );
 
 // =========================

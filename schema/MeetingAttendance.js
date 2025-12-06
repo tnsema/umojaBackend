@@ -1,4 +1,4 @@
-// models/MeetingAttendance.js
+// schema/MeetingAttendance.js
 // Tracks which member attended which meeting.
 
 import mongoose from "mongoose";
@@ -20,6 +20,7 @@ const meetingAttendanceSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
 
     // Whether this member attended the meeting
@@ -28,21 +29,17 @@ const meetingAttendanceSchema = new Schema(
       default: false,
     },
 
-    // Evidence file (screenshot, sign-in sheet, etc.)
+    // Evidence file (screenshot, sign-in sheet, etc.) – optional
     evidenceDocId: {
       type: String,
-    },
-
-    // User who recorded this attendance (Admin / Secretary)
-    recordedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
     },
   },
   {
     timestamps: true,
   }
 );
+
+// Each member should have at most one attendance record per meeting
+meetingAttendanceSchema.index({ meetingId: 1, memberId: 1 }, { unique: true });
 
 export default model("MeetingAttendance", meetingAttendanceSchema);
